@@ -1,0 +1,58 @@
+# Node dependencies and package manager files
+node_modules/
+.pnp/
+.pnp.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Next.js and frontend output
+.next/
+out/
+build/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Python environments and artifacts
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.egg-info/
+
+# Environment files and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Supabase local state and generated files
+supabase/.branches/
+supabase/.temp/
+supabase/.env
+supabase/functions/.env
+
+# Deployment and editor files
+.vercel/
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# General caches and temporary files
+.cache/
+.turbo/
+tmp/
+temp/
+*.log

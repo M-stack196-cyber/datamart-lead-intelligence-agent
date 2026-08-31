@@ -1,0 +1,17 @@
+{
+  "name": "datamart-lead-intelligence-agent",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": ["frontend"],
+  "scripts": {
+    "dev:frontend": "npm run dev --workspace frontend",
+    "build:frontend": "npm run build --workspace frontend",
+    "lint": "npm run lint --workspace frontend",
+    "test:backend": "backend/.venv/bin/python -m pytest backend/tests",
+    "check": "npm run lint && npm run build:frontend && npm run test:backend"
+  },
+  "engines": {
+    "node": ">=20.9.0",
+    "npm": ">=10.0.0"
+  }
+}
