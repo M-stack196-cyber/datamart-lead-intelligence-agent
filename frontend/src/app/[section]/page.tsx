@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { DashboardShell } from "@/components/dashboard-shell";
 import { IcpManager } from "@/components/icp-manager";
+import { LeadIntake } from "@/components/lead-intake";
+import { LeadsWorkspace } from "@/components/leads-workspace";
+import { ImportsWorkspace } from "@/components/imports-workspace";
 
 const sections = {
   leads: "Leads",
@@ -48,6 +51,10 @@ export default async function SectionPage({ params }: SectionPageProps) {
       </DashboardShell>
     );
   }
+
+  if (section === "add-leads") return <DashboardShell activePath="/add-leads"><LeadIntake /></DashboardShell>;
+  if (section === "leads") return <DashboardShell activePath="/leads"><LeadsWorkspace /></DashboardShell>;
+  if (section === "imports") return <DashboardShell activePath="/imports"><ImportsWorkspace /></DashboardShell>;
 
   return (
     <DashboardShell activePath={`/${section}`}>

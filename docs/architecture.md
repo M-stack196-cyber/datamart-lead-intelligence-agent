@@ -59,3 +59,14 @@ server-trusted role before serving protected endpoints. The service-role credent
   change rule outcomes.
 - Unknown evidence remains unknown and receives no points. It is never treated as a match.
 - Future rescoring creates a new result instead of overwriting historical qualification evidence.
+
+## Lead intake boundary
+
+`ingest_leads` is the Phase 6 transaction boundary. It accepts no more than 100 rows, validates a
+researchable identity, enforces LinkedIn profile URL shape, deduplicates on normalized profile URL,
+records the import outcome, and creates one queued `enrich` job for each accepted lead. The queue is
+data only in this phase; provider execution remains disabled.
+
+CSV parsing happens in the browser for preview, but the database repeats authoritative validation.
+The security-definer RPC is intentionally executable only by authenticated users and derives the actor
+from `auth.uid()`. It never accepts a caller-supplied owner or role.

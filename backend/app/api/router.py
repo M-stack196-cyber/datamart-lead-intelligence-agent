@@ -6,6 +6,7 @@ from app.schemas.health import HealthResponse
 from app.repositories.icp_repository import icp_repository
 from app.schemas.icp import IcpDefinition, IcpVersionSummary, LeadProfile, ScoreResult
 from app.scoring.icp_engine import IcpScoringEngine
+from app.schemas.intake import LeadIntakeBatch, LeadIntakeValidation
 
 router = APIRouter()
 
@@ -41,3 +42,11 @@ async def score_lead(lead: LeadProfile, _user: CurrentUser = Depends(require_use
     """Score a lead deterministically and preserve the active ICP version in the result."""
     definition = icp_repository.get_active()
     return IcpScoringEngine(definition).score(lead)
+
+
+@router.post("/intake/validate", response_model=LeadIntakeValidation, tags=["intake"])
+async def validate_lead_intake(
+    batch: LeadIntakeBatch, _user: CurrentUser = Depends(require_user)
+) -> LeadIntakeValidation:
+    """Validate and normalize a lead batch without storing or processing it."""
+    return LeadIntakeValidation(valid=True, count=len(batch.rows), rows=batch.rows)

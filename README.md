@@ -94,3 +94,15 @@ npm run check
 ```
 
 This runs frontend lint, a production frontend build, and backend tests.
+
+## Phase 6 lead intake
+
+- Paste up to 100 public LinkedIn profile URLs, one per line.
+- Upload CSV files with `linkedin_url`, `company_name`, `person_name`, `title`, `company_url`, `email`, `country`, and `industry` columns.
+- Every batch creates an immutable import summary with row-level rejection reasons.
+- Duplicate LinkedIn URLs are rejected without duplicating lead records.
+- Every accepted lead is queued for future enrichment; Phase 6 does not execute the queue.
+- Sales users see leads they created or were assigned. Managers and admins can see all leads.
+
+The intake RPC performs validation, insertion, deduplication, audit logging, and job creation in one
+database transaction. It does not scrape LinkedIn or call Vibe, Bedrock, or public-web providers.

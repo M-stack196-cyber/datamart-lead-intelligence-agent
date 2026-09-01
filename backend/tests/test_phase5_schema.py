@@ -18,3 +18,11 @@ def test_hardening_removes_anonymous_function_access() -> None:
     hardening = (Path(__file__).parents[2] / "supabase" / "migrations" / "20260901123500_phase5_security_hardening.sql").read_text()
     assert "public.publish_icp_version(uuid) from public, anon" in hardening
     assert "public.set_user_role(uuid, public.app_role) from public, anon" in hardening
+
+
+def test_phase6_intake_is_atomic_and_queues_every_accepted_lead() -> None:
+    migration = (Path(__file__).parents[2] / "supabase" / "migrations" / "20260901133000_phase6_lead_intake.sql").read_text()
+    assert "create or replace function public.ingest_leads" in migration
+    assert "on conflict (lower(linkedin_url))" in migration
+    assert "insert into public.processing_jobs" in migration
+    assert "revoke all on function public.ingest_leads" in migration
