@@ -31,5 +31,17 @@ both enforce admin, manager, and sales access.
 
 ## Current checkpoint
 
-This repository contains the architecture foundation only. Provider adapters, database migrations,
-authentication, scoring, research, and lead workflows require their own approved phases.
+This repository contains the architecture foundation and Phase 4 ICP intelligence layer. Provider
+adapters, database migrations, authentication, research, and lead workflows require their own
+approved phases.
+
+## ICP lifecycle and scoring
+
+- ICP definitions are immutable versions behind `IcpRepository`. Supabase can replace the current
+  file-backed repository without changing scoring callers.
+- An Admin creates a draft from the active version. Publishing archives the previous active version;
+  historical scores continue to reference the rule version that produced them.
+- Lead qualification is deterministic. Bedrock may explain or draft from a score but cannot silently
+  change rule outcomes.
+- Unknown evidence remains unknown and receives no points. It is never treated as a match.
+- Future rescoring creates a new result instead of overwriting historical qualification evidence.

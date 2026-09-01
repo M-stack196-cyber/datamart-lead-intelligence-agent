@@ -7,6 +7,7 @@ const navigation = [
   { label: "Add leads", href: "/add-leads", marker: "+" },
   { label: "Imports", href: "/imports", marker: "I" },
   { label: "Evidence", href: "/evidence", marker: "E" },
+  { label: "ICP & Personas", href: "/icp", marker: "C" },
   { label: "Processing", href: "/processing", marker: "P" },
   { label: "Exports", href: "/exports", marker: "X" },
   { label: "Team", href: "/team", marker: "T" },
@@ -66,7 +67,7 @@ export function DashboardShell({ activePath, children }: DashboardShellProps) {
 
         <div className="hidden border-t border-white/10 p-6 lg:block">
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-teal-300">Workspace</p>
-          <p className="mt-2 text-sm text-slate-400">Architecture foundation</p>
+          <p className="mt-2 text-sm text-slate-400">ICP Version 1 active</p>
         </div>
       </aside>
 
@@ -77,7 +78,7 @@ export function DashboardShell({ activePath, children }: DashboardShellProps) {
             <p className="mt-1 text-sm text-slate-500">Lead Intelligence Agent</p>
           </div>
           <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600">
-            Foundation
+            Phase 4
           </span>
         </header>
         <main className="p-5 sm:p-8 lg:p-10">{children}</main>

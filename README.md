@@ -4,8 +4,20 @@ An evidence-backed lead research and qualification workspace for Datamart. The a
 uses Vibe Prospecting for B2B data, deterministic rules for ICP qualification, AWS Bedrock for
 evidence-grounded analysis, and Supabase for PostgreSQL and authentication.
 
-This checkpoint contains the new architecture foundation only. It intentionally contains no live
-lead workflow, database schema, authentication flow, scoring logic, or provider calls.
+This checkpoint contains the architecture foundation and Phase 4 ICP intelligence layer. It
+intentionally contains no live lead workflow, database schema, authentication flow, or provider calls.
+
+## ICP intelligence
+
+- The March 2026 Datamart playbook is structured as immutable ICP Version 1.
+- Deterministic scoring records matched, failed, and unknown criteria.
+- Hard-stop exclusions override positive fit signals.
+- Results retain the exact ICP version and supporting evidence URLs.
+- Draft, publish, and archive operations preserve historical versions.
+- The dashboard shows active rules, personas, hard stops, and version status.
+
+ICP management endpoints remain read-only until Supabase authentication and Admin role enforcement
+are connected. This prevents unauthenticated rule publishing.
 
 ## Repository layout
 
@@ -14,6 +26,7 @@ frontend/                 Next.js dashboard
 backend/app/api/          FastAPI routes
 backend/app/integrations/ Vibe, Bedrock, and public-web adapters
 backend/app/scoring/      Deterministic ICP scoring boundary
+backend/data/icp_versions/ Structured, versioned ICP definitions
 backend/app/workers/      Durable worker entry point
 backend/tests/            Backend tests
 supabase/migrations/      Approved migrations (currently empty)

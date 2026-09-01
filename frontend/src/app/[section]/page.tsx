@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { DashboardShell } from "@/components/dashboard-shell";
+import { IcpManager } from "@/components/icp-manager";
 
 const sections = {
   leads: "Leads",
   "add-leads": "Add leads",
   imports: "Imports",
   evidence: "Evidence",
+  icp: "ICP & Personas",
   processing: "Processing",
   exports: "Exports",
   team: "Team",
@@ -37,6 +39,14 @@ export default async function SectionPage({ params }: SectionPageProps) {
 
   if (!isSection(section)) {
     notFound();
+  }
+
+  if (section === "icp") {
+    return (
+      <DashboardShell activePath="/icp">
+        <IcpManager />
+      </DashboardShell>
+    );
   }
 
   return (
