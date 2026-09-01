@@ -26,3 +26,19 @@ def test_phase6_intake_is_atomic_and_queues_every_accepted_lead() -> None:
     assert "on conflict (lower(linkedin_url))" in migration
     assert "insert into public.processing_jobs" in migration
     assert "revoke all on function public.ingest_leads" in migration
+
+
+def test_phase7_lead_management_uses_audited_role_controlled_functions() -> None:
+    migration = (Path(__file__).parents[2] / "supabase" / "migrations" / "20260901140000_phase7_lead_management.sql").read_text()
+    assert "revoke insert, update, delete on table public.leads from authenticated" in migration
+    assert "create or replace function public.update_lead" in migration
+    assert "create or replace function public.assign_lead" in migration
+    assert "create or replace function public.delete_lead" in migration
+    assert "'lead_deleted'" in migration
+    assert "Admin role required" in migration
+
+
+def test_phase7_locks_direct_lead_table_privileges_to_select() -> None:
+    migration = (Path(__file__).parents[2] / "supabase" / "migrations" / "20260901140500_phase7_leads_privilege_lockdown.sql").read_text()
+    assert "revoke all privileges on table public.leads from authenticated" in migration
+    assert "grant select on table public.leads to authenticated" in migration
