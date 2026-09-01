@@ -4,8 +4,9 @@ An evidence-backed lead research and qualification workspace for Datamart. The a
 uses Vibe Prospecting for B2B data, deterministic rules for ICP qualification, AWS Bedrock for
 evidence-grounded analysis, and Supabase for PostgreSQL and authentication.
 
-This checkpoint contains the architecture foundation and Phase 4 ICP intelligence layer. It
-intentionally contains no live lead workflow, database schema, authentication flow, or provider calls.
+This checkpoint contains the Phase 5 data and identity foundation. It includes a Supabase schema,
+authentication, role-aware access, protected dashboard routes, and versioned ICP controls. Live lead
+research and provider calls remain intentionally inactive until their implementation phases are approved.
 
 ## ICP intelligence
 
@@ -16,8 +17,8 @@ intentionally contains no live lead workflow, database schema, authentication fl
 - Draft, publish, and archive operations preserve historical versions.
 - The dashboard shows active rules, personas, hard stops, and version status.
 
-ICP management endpoints remain read-only until Supabase authentication and Admin role enforcement
-are connected. This prevents unauthenticated rule publishing.
+Managers and admins can create draft ICP versions. Only admins can publish a draft. Publishing archives
+the previous active version while historical lead scores retain their original version reference.
 
 ## Repository layout
 
@@ -29,7 +30,7 @@ backend/app/scoring/      Deterministic ICP scoring boundary
 backend/data/icp_versions/ Structured, versioned ICP definitions
 backend/app/workers/      Durable worker entry point
 backend/tests/            Backend tests
-supabase/migrations/      Approved migrations (currently empty)
+supabase/migrations/      Versioned schema, role functions, and RLS policies
 docs/                     Architecture documentation
 ```
 
@@ -50,6 +51,18 @@ backend/.venv/bin/python -m pip install -r backend/requirements.txt
 
 Keep real credentials in the ignored repository-root `.env`. Compare it with `.env.example` and
 add missing variables without replacing existing secrets.
+
+## Phase 5 Supabase setup
+
+1. Create or select the Datamart Supabase project.
+2. Apply `supabase/migrations/20260901120000_phase5_core_schema.sql` through the Supabase migration workflow.
+3. Add the project URL and publishable/anon key to the frontend variables in the ignored `.env`.
+4. Add the URL, anon key, service-role key, and database URL to the backend variables.
+5. Run `npm run seed:icp` once to idempotently seed the approved active ICP.
+6. Create the first Auth user, then bootstrap its `profiles.role` to `admin` from the SQL editor. Later role changes must use the `set_user_role` RPC.
+
+Never place the service-role key or database URL in a `NEXT_PUBLIC_` variable. The migration enables RLS
+for every business table and restricts ICP publishing and role changes to admins.
 
 ## Run locally
 

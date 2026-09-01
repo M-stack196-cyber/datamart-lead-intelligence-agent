@@ -1,6 +1,7 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 
+from app.api.auth import CurrentUser, require_user
 from app.main import app
 from app.repositories.icp_repository import IcpRepository, icp_repository
 from app.schemas.icp import LeadProfile
@@ -66,24 +67,30 @@ def test_missing_evidence_is_unknown_instead_of_invented() -> None:
 
 @pytest.mark.anyio
 async def test_icp_api_lists_version_and_scores_lead() -> None:
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
-        versions = await client.get("/icp/versions")
-        score = await client.post(
-            "/icp/score",
-            json={
-                "company_name": "Healthcare Ops",
-                "annual_revenue": 2_000_000,
-                "employee_count": 25,
-                "country": "USA",
-                "industry": "Healthcare",
-                "business_model": "Service-based",
-                "growth_stage": "Established",
-                "buying_behavior": "Milestone-based",
-                "title": "Operations Director"
-            },
-        )
+    app.dependency_overrides[require_user] = lambda: CurrentUser(
+        id="test-user", email="sales@datamart.test", role="sales"
+    )
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            versions = await client.get("/icp/versions")
+            score = await client.post(
+                "/icp/score",
+                json={
+                    "company_name": "Healthcare Ops",
+                    "annual_revenue": 2_000_000,
+                    "employee_count": 25,
+                    "country": "USA",
+                    "industry": "Healthcare",
+                    "business_model": "Service-based",
+                    "growth_stage": "Established",
+                    "buying_behavior": "Milestone-based",
+                    "title": "Operations Director"
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
 
     assert versions.status_code == 200
     assert versions.json()[0]["status"] == "active"

@@ -7,6 +7,7 @@
     "dev:frontend": "npm run dev --workspace frontend",
     "dev:backend": "backend/.venv/bin/uvicorn app.main:app --reload --app-dir backend",
     "dev:worker": "backend/.venv/bin/python -m app.workers.runner",
+    "seed:icp": "cd backend && .venv/bin/python -m scripts.seed_icp",
     "build:frontend": "npm run build --workspace frontend",
     "lint": "npm run lint --workspace frontend",
     "test:backend": "backend/.venv/bin/python -m pytest backend/tests",

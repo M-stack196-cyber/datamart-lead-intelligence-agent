@@ -31,9 +31,23 @@ both enforce admin, manager, and sales access.
 
 ## Current checkpoint
 
-This repository contains the architecture foundation and Phase 4 ICP intelligence layer. Provider
-adapters, database migrations, authentication, research, and lead workflows require their own
-approved phases.
+Phase 5 adds Supabase Auth, persistent business tables, RLS, audit records, server-validated API tokens,
+and protected Next.js routes. Admin, manager, and sales permissions are resolved from `profiles`; role
+values are never trusted from browser input or user-editable metadata. Provider adapters, research,
+lead processing, and automatic outreach remain inactive.
+
+## Access matrix
+
+| Capability | Admin | Manager | Sales |
+| --- | --- | --- | --- |
+| View all leads and imports | Yes | Yes | No |
+| View assigned/created leads | Yes | Yes | Yes |
+| Create ICP draft | Yes | Yes | No |
+| Publish ICP version | Yes | No | No |
+| Change team roles / view audit log | Yes | No | No |
+
+Supabase RLS is the primary data boundary. FastAPI independently validates bearer tokens and loads the
+server-trusted role before serving protected endpoints. The service-role credential remains backend-only.
 
 ## ICP lifecycle and scoring
 

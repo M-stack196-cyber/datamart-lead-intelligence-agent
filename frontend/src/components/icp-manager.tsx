@@ -1,6 +1,19 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+
+type AppRole = "admin" | "manager" | "sales";
+type IcpVersion = {
+  id: string;
+  external_id: string;
+  name: string;
+  version: number;
+  status: "draft" | "active" | "archived";
+  definition: Record<string, unknown>;
+  source: string;
+  effective_date: string;
+};
 
 const scoringRules = [
   ["Revenue fit", 20, "$500K-$20M"],
@@ -29,7 +42,60 @@ const hardStops = [
 
 export function IcpManager() {
   const [view, setView] = useState<"rules" | "personas" | "versions">("rules");
+  const supabase = useMemo(() => createBrowserSupabaseClient(), []);
+  const [role, setRole] = useState<AppRole>("sales");
+  const [versions, setVersions] = useState<IcpVersion[]>([]);
+  const [actionMessage, setActionMessage] = useState("");
+  const [busy, setBusy] = useState(false);
   const totalWeight = useMemo(() => scoringRules.reduce((sum, rule) => sum + rule[1], 0), []);
+  const activeVersion = versions.find((version) => version.status === "active");
+
+  const loadControlData = useCallback(async () => {
+    if (!supabase) return;
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const [profileResult, versionsResult] = await Promise.all([
+      supabase.from("profiles").select("role").eq("id", user.id).single(),
+      supabase.from("icp_versions").select("id, external_id, name, version, status, definition, source, effective_date").order("version", { ascending: false }),
+    ]);
+    if (profileResult.data?.role) setRole(profileResult.data.role as AppRole);
+    if (versionsResult.data) setVersions(versionsResult.data as IcpVersion[]);
+  }, [supabase]);
+
+  useEffect(() => {
+    const task = window.setTimeout(() => void loadControlData(), 0);
+    return () => window.clearTimeout(task);
+  }, [loadControlData]);
+
+  async function createDraft() {
+    if (!supabase || !activeVersion || !["admin", "manager"].includes(role)) return;
+    setBusy(true);
+    setActionMessage("");
+    const { data: { user } } = await supabase.auth.getUser();
+    const nextVersion = Math.max(...versions.map((version) => version.version), 0) + 1;
+    const { error } = await supabase.from("icp_versions").insert({
+      external_id: `datamart-icp-v${nextVersion}`,
+      name: activeVersion.name,
+      version: nextVersion,
+      status: "draft",
+      definition: activeVersion.definition,
+      source: `${activeVersion.source} (drafted from v${activeVersion.version})`,
+      effective_date: new Date().toISOString().slice(0, 10),
+      created_by: user?.id,
+    });
+    setBusy(false);
+    setActionMessage(error ? error.message : `Draft v${nextVersion} created. The active version is unchanged.`);
+    if (!error) { setView("versions"); await loadControlData(); }
+  }
+
+  async function publishVersion(versionId: string) {
+    if (!supabase || role !== "admin") return;
+    setBusy(true);
+    const { error } = await supabase.rpc("publish_icp_version", { target_id: versionId });
+    setBusy(false);
+    setActionMessage(error ? error.message : "Draft published. New scoring uses this version; prior scores retain their original version.");
+    if (!error) await loadControlData();
+  }
 
   return (
     <section className="space-y-6">
@@ -38,16 +104,18 @@ export function IcpManager() {
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-teal-300">Qualification control center</p>
           <h1 className="mt-3 text-3xl font-bold tracking-tight">ICP & Persona Management</h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
-            Datamart Playbook v1 is the active scoring source. Future changes become drafts, then publish as new versions without rewriting application code.
+            Datamart Playbook v{activeVersion?.version ?? 1} is the active scoring source. Changes become drafts, then publish as new versions without rewriting application code.
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <span className="rounded-full bg-emerald-400/15 px-3 py-1.5 text-xs font-bold text-emerald-300">Active · v1</span>
-          <button type="button" disabled title="Enabled after Supabase authentication is connected" className="cursor-not-allowed rounded-xl bg-white/10 px-4 py-2 text-sm font-bold text-slate-400">
-            Create draft
+          <span className="rounded-full bg-emerald-400/15 px-3 py-1.5 text-xs font-bold text-emerald-300">Active · v{activeVersion?.version ?? 1}</span>
+          <button type="button" onClick={createDraft} disabled={busy || !activeVersion || !["admin", "manager"].includes(role)} title={role === "sales" ? "Manager or admin role required" : undefined} className="rounded-xl bg-white/10 px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:text-slate-500">
+            {busy ? "Working..." : "Create draft"}
           </button>
         </div>
       </div>
+
+      {actionMessage && <p role="status" className="rounded-xl border border-teal-200 bg-teal-50 px-4 py-3 text-sm text-teal-900">{actionMessage}</p>}
 
       <div className="grid gap-4 sm:grid-cols-3">
         {[
@@ -101,7 +169,7 @@ export function IcpManager() {
 
         {view === "personas" && <div className="grid gap-4 p-5 lg:grid-cols-3 lg:p-6">{personas.map((persona) => <article key={persona.name} className="rounded-2xl border border-slate-200 p-5"><p className="text-xs font-bold uppercase tracking-[0.15em] text-teal-700">Persona</p><h2 className="mt-2 text-xl font-bold">{persona.name}</h2><p className="mt-3 text-sm text-slate-500">{persona.profile}</p><p className="mt-5 text-xs font-bold text-slate-700">Key trigger</p><p className="mt-1 text-sm leading-6 text-slate-600">{persona.trigger}</p></article>)}</div>}
 
-        {view === "versions" && <div className="p-5 lg:p-6"><div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-bold text-emerald-950">Datamart Core ICP · Version 1</p><p className="mt-1 text-sm text-emerald-800">Effective March 1, 2026 · Source: approved ICP & Persona Playbook</p></div><span className="rounded-full bg-emerald-600 px-3 py-1 text-xs font-bold text-white">Active</span></div></div><p className="mt-4 text-sm text-slate-500">Publishing, archiving, and rescoring controls will activate after Supabase authentication and role enforcement are connected.</p></div>}
+        {view === "versions" && <div className="space-y-3 p-5 lg:p-6">{versions.length === 0 ? <p className="rounded-2xl bg-slate-100 p-5 text-sm text-slate-600">Run the Phase 5 migration and safe ICP seed to load version controls.</p> : versions.map((version) => <div key={version.id} className={`rounded-2xl border p-5 ${version.status === "active" ? "border-emerald-200 bg-emerald-50" : "border-slate-200"}`}><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="font-bold text-slate-950">{version.name} · Version {version.version}</p><p className="mt-1 text-sm text-slate-600">Effective {version.effective_date} · {version.source}</p></div><div className="flex items-center gap-2"><span className="rounded-full bg-slate-700 px-3 py-1 text-xs font-bold capitalize text-white">{version.status}</span>{version.status === "draft" && role === "admin" && <button type="button" disabled={busy} onClick={() => publishVersion(version.id)} className="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-60">Publish</button>}</div></div></div>)}</div>}
       </div>
     </section>
   );

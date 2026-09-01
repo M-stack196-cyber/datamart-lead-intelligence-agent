@@ -1,5 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { AuthGate } from "@/components/auth-gate";
+import { AccountBadge } from "@/components/account-badge";
 
 const navigation = [
   { label: "Dashboard", href: "/", marker: "D" },
@@ -21,7 +23,8 @@ type DashboardShellProps = {
 
 export function DashboardShell({ activePath, children }: DashboardShellProps) {
   return (
-    <div className="min-h-screen bg-slate-100 lg:grid lg:grid-cols-[17rem_1fr]">
+    <AuthGate>
+      <div className="min-h-screen bg-slate-100 lg:grid lg:grid-cols-[17rem_1fr]">
       <aside className="bg-slate-950 text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
         <div className="flex h-20 items-center gap-3 border-b border-white/10 px-5 lg:px-6">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-teal-400 font-black text-slate-950">
@@ -67,7 +70,7 @@ export function DashboardShell({ activePath, children }: DashboardShellProps) {
 
         <div className="hidden border-t border-white/10 p-6 lg:block">
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-teal-300">Workspace</p>
-          <p className="mt-2 text-sm text-slate-400">ICP Version 1 active</p>
+          <p className="mt-2 text-sm text-slate-400">Versioned ICP enabled</p>
         </div>
       </aside>
 
@@ -77,12 +80,11 @@ export function DashboardShell({ activePath, children }: DashboardShellProps) {
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-teal-700">Datamart workspace</p>
             <p className="mt-1 text-sm text-slate-500">Lead Intelligence Agent</p>
           </div>
-          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-semibold text-slate-600">
-            Phase 4
-          </span>
+          <AccountBadge />
         </header>
         <main className="p-5 sm:p-8 lg:p-10">{children}</main>
       </div>
-    </div>
+      </div>
+    </AuthGate>
   );
 }
