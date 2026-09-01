@@ -1,14 +1,35 @@
-# Phase 1 Architecture
+# Approved System Architecture
 
-The project is a monorepo with two independently runnable applications:
+The application is a deployment-neutral monorepo with three runtime processes:
 
-- `frontend/` renders the Datamart workspace with Next.js App Router and Tailwind CSS.
-- `backend/` exposes a FastAPI application. Phase 1 contains only operational health reporting.
+1. Next.js dashboard in `frontend/`.
+2. FastAPI service in `backend/`.
+3. Durable lead-processing worker launched from `backend/app/workers/runner.py`.
 
-The browser-facing application reads its API base URL from `NEXT_PUBLIC_API_URL`. The API permits configured browser origins from the comma-separated `CORS_ORIGINS` environment variable. Local defaults are safe for development and must be overridden by deployment configuration.
+## Provider boundaries
 
-Supabase PostgreSQL and Supabase Auth are the approved data and identity services, but they are not connected in Phase 1. The migrations directory is retained with a placeholder file so the repository topology is ready without creating schema.
+- Vibe Prospecting supplies company/contact discovery, enrichment, and business events.
+- Public company sites, job pages, and news strengthen evidence with direct links.
+- Deterministic rules apply hard exclusions and weighted ICP scoring.
+- AWS Bedrock analyzes collected evidence and drafts outreach after scoring.
+- Supabase provides PostgreSQL, Auth, role enforcement, and audit-ready persistence.
 
-## Boundary
+External providers live behind adapters so their payloads never leak into domain models.
 
-Navigation communicates planned information architecture only. Every future product area renders an explicit later-phase message and does not access data or provide operational behavior.
+## Processing sequence
+
+`ingest -> deduplicate -> enqueue -> enrich -> verify evidence -> score -> analyze -> review/export`
+
+Jobs will be stored in PostgreSQL and claimed by a separate worker. In-memory background tasks
+must not be used for durable lead processing.
+
+## Security boundary
+
+Only the backend may read Vibe, Bedrock, Supabase service-role, or database secrets. The browser
+may receive only Supabase public configuration. Row-Level Security and backend authorization must
+both enforce admin, manager, and sales access.
+
+## Current checkpoint
+
+This repository contains the architecture foundation only. Provider adapters, database migrations,
+authentication, scoring, research, and lead workflows require their own approved phases.

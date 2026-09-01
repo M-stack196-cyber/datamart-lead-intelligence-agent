@@ -1,64 +1,75 @@
 import { DashboardShell } from "@/components/dashboard-shell";
 
-const foundationItems = [
+const architecture = [
   {
-    title: "Workspace ready",
-    description: "The frontend and API foundations are configured for local development.",
+    title: "Lead data",
+    provider: "Vibe Prospecting",
+    detail: "Discovery, contact matching, company enrichment, and business signals.",
   },
   {
-    title: "Data stays truthful",
-    description: "No sample metrics, charts, leads, or business results are shown.",
+    title: "Intelligence",
+    provider: "AWS Bedrock",
+    detail: "Evidence-grounded analysis and outreach drafting after deterministic scoring.",
   },
   {
-    title: "Phase boundaries set",
-    description: "Future product areas are visible as placeholders and remain inactive.",
+    title: "Data and identity",
+    provider: "Supabase",
+    detail: "PostgreSQL, authentication, role enforcement, and audit-ready records.",
   },
+];
+
+const safeguards = [
+  "Hard disqualifiers stay deterministic",
+  "Every important conclusion links to evidence",
+  "Missing facts remain unknown",
+  "No LinkedIn scraping or automatic messaging",
 ];
 
 export default function DashboardPage() {
   return (
     <DashboardShell activePath="/">
       <div className="space-y-8">
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+        <section className="overflow-hidden rounded-3xl bg-slate-950 p-6 text-white shadow-sm sm:p-8">
           <div className="max-w-3xl">
-            <span className="inline-flex rounded-full bg-teal-50 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-teal-700">
-              Phase 1 foundation
+            <span className="inline-flex rounded-full bg-teal-300 px-3 py-1 text-xs font-black uppercase tracking-[0.18em] text-slate-950">
+              New foundation
             </span>
-            <h1 className="mt-5 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">
-              Lead intelligence, built on a clear foundation.
+            <h1 className="mt-5 text-3xl font-bold tracking-tight sm:text-4xl">
+              Datamart Lead Intelligence Agent
             </h1>
-            <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600">
-              This workspace is ready for phased development. Operational data and
-              workflows will appear only after their corresponding phases are approved
-              and implemented.
+            <p className="mt-4 max-w-2xl text-base leading-7 text-slate-300">
+              The approved architecture is in place for evidence-backed lead discovery,
+              qualification, scoring, and outreach preparation. Business workflows remain
+              inactive until their implementation phases are approved.
             </p>
           </div>
         </section>
 
-        <section aria-labelledby="foundation-heading">
-          <div className="mb-4 flex items-end justify-between gap-4">
-            <div>
-              <p className="text-sm font-semibold text-teal-700">Project status</p>
-              <h2 id="foundation-heading" className="mt-1 text-xl font-bold text-slate-950">
-                Foundation checkpoints
-              </h2>
-            </div>
-            <span className="hidden text-sm text-slate-500 sm:block">No business data connected</span>
-          </div>
-          <div className="grid gap-4 lg:grid-cols-3">
-            {foundationItems.map((item, index) => (
-              <article
-                key={item.title}
-                className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
-              >
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-950 text-sm font-bold text-white">
-                  {String(index + 1).padStart(2, "0")}
-                </div>
-                <h3 className="mt-5 font-bold text-slate-950">{item.title}</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-600">{item.description}</p>
+        <section aria-labelledby="architecture-heading">
+          <p className="text-sm font-semibold text-teal-700">Approved providers</p>
+          <h2 id="architecture-heading" className="mt-1 text-xl font-bold text-slate-950">
+            Architecture boundaries
+          </h2>
+          <div className="mt-4 grid gap-4 lg:grid-cols-3">
+            {architecture.map((item) => (
+              <article key={item.title} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <p className="text-xs font-bold uppercase tracking-[0.16em] text-slate-500">{item.title}</p>
+                <h3 className="mt-3 text-lg font-bold text-slate-950">{item.provider}</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{item.detail}</p>
               </article>
             ))}
           </div>
+        </section>
+
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+          <p className="text-sm font-semibold text-teal-700">Non-negotiable safeguards</p>
+          <ul className="mt-4 grid gap-3 sm:grid-cols-2">
+            {safeguards.map((item) => (
+              <li key={item} className="rounded-xl bg-slate-50 px-4 py-3 text-sm font-medium text-slate-700">
+                {item}
+              </li>
+            ))}
+          </ul>
         </section>
       </div>
     </DashboardShell>

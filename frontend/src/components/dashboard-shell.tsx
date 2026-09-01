@@ -4,12 +4,11 @@ import type { ReactNode } from "react";
 const navigation = [
   { label: "Dashboard", href: "/", marker: "D" },
   { label: "Leads", href: "/leads", marker: "L" },
-  { label: "Research", href: "/research", marker: "R" },
-  { label: "Campaigns", href: "/campaigns", marker: "C" },
-  { label: "Approvals", href: "/approvals", marker: "A" },
-  { label: "Conversations", href: "/conversations", marker: "C" },
-  { label: "Meetings", href: "/meetings", marker: "M" },
-  { label: "Reports", href: "/reports", marker: "R" },
+  { label: "Add leads", href: "/add-leads", marker: "+" },
+  { label: "Imports", href: "/imports", marker: "I" },
+  { label: "Evidence", href: "/evidence", marker: "E" },
+  { label: "Processing", href: "/processing", marker: "P" },
+  { label: "Exports", href: "/exports", marker: "X" },
   { label: "Team", href: "/team", marker: "T" },
   { label: "Settings", href: "/settings", marker: "S" },
 ] as const;
@@ -67,7 +66,7 @@ export function DashboardShell({ activePath, children }: DashboardShellProps) {
 
         <div className="hidden border-t border-white/10 p-6 lg:block">
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-teal-300">Workspace</p>
-          <p className="mt-2 text-sm text-slate-400">Phase 1 · Foundation</p>
+          <p className="mt-2 text-sm text-slate-400">Architecture foundation</p>
         </div>
       </aside>
 

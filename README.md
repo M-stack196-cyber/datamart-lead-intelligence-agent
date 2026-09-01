@@ -1,79 +1,70 @@
 # Datamart Lead Intelligence Agent
 
-Phase 1 establishes a production-oriented monorepo foundation for a Next.js dashboard and FastAPI service. Product workflows, authentication, database schema, and integrations are intentionally deferred.
+An evidence-backed lead research and qualification workspace for Datamart. The approved system
+uses Vibe Prospecting for B2B data, deterministic rules for ICP qualification, AWS Bedrock for
+evidence-grounded analysis, and Supabase for PostgreSQL and authentication.
+
+This checkpoint contains the new architecture foundation only. It intentionally contains no live
+lead workflow, database schema, authentication flow, scoring logic, or provider calls.
 
 ## Repository layout
 
 ```text
-.
-├── frontend/              Next.js App Router application
-├── backend/               FastAPI application and tests
-├── supabase/migrations/   Reserved for approved future migrations
-└── docs/                  Architecture and phase documentation
+frontend/                 Next.js dashboard
+backend/app/api/          FastAPI routes
+backend/app/integrations/ Vibe, Bedrock, and public-web adapters
+backend/app/scoring/      Deterministic ICP scoring boundary
+backend/app/workers/      Durable worker entry point
+backend/tests/            Backend tests
+supabase/migrations/      Approved migrations (currently empty)
+docs/                     Architecture documentation
 ```
 
-## Prerequisites (Ubuntu)
+## Prerequisites
 
-- Node.js 20.9 or newer and npm 10 or newer
-- Python 3.12 or newer, including the `venv` module
-- Git
+- Node.js 20.9 or newer
+- npm 10 or newer
+- Python 3.12 or newer with `venv`
 
-On Ubuntu, install the system-provided Python tools with:
-
-```bash
-sudo apt update
-sudo apt install -y python3 python3-venv python3-pip
-```
-
-Install a current Node.js LTS release using your preferred version manager, then verify `node --version` and `npm --version` satisfy the versions above.
-
-## First-time setup
-
-From the repository root:
+## Setup
 
 ```bash
 npm install
 python3 -m venv backend/.venv
 backend/.venv/bin/python -m pip install --upgrade pip
 backend/.venv/bin/python -m pip install -r backend/requirements.txt
-cp .env.example .env
-cp backend/.env.example backend/.env
 ```
 
-The example environment files contain local placeholders only. Keep real configuration in ignored `.env` files.
+Keep real credentials in the ignored repository-root `.env`. Compare it with `.env.example` and
+add missing variables without replacing existing secrets.
 
 ## Run locally
 
-Start the frontend:
+Frontend:
 
 ```bash
 npm run dev:frontend
 ```
 
-In a second terminal, start the API:
+API:
 
 ```bash
-backend/.venv/bin/uvicorn app.main:app --reload --app-dir backend
+npm run dev:backend
 ```
 
-Open `http://localhost:3000` for the dashboard. The API health check is available at `http://localhost:8000/health`.
+The dashboard runs at `http://localhost:3000`. API health is available at
+`http://localhost:8000/health` and reports only whether integrations are configured, never values.
 
-## Quality checks
+The worker command is reserved but intentionally exits until its workflow phase is approved:
 
-Run every checkpoint validation from the repository root:
+```bash
+npm run dev:worker
+```
+
+## Validate
 
 ```bash
 npm run check
 ```
 
-Or run checks individually:
-
-```bash
-npm run lint
-npm run build:frontend
-npm run test:backend
-```
-
-## Phase 1 scope
-
-This checkpoint includes the responsive dashboard shell, later-phase placeholders, backend structure, environment-driven CORS, and health-check coverage. It includes no Supabase migrations, authentication flows, dynamic roles/settings, business automation, or fabricated analytics.
+This runs frontend lint, a production frontend build, and backend tests.

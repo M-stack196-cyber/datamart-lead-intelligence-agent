@@ -1,31 +1,36 @@
-# Datamart Lead Intelligence Agent — Contributor Guide
+# Datamart Lead Intelligence Agent - Contributor Guide
 
-## Approved stack
+## Approved architecture
 
-- Monorepo with an npm-managed Next.js frontend and a Python FastAPI backend.
+- Monorepo with an npm-managed Next.js frontend and Python FastAPI backend.
 - Frontend: Next.js App Router, TypeScript, Tailwind CSS, and ESLint.
-- Backend: FastAPI with its virtual environment at `backend/.venv`.
-- Data and identity: Supabase PostgreSQL and Supabase Auth when their phase is approved.
+- Backend: FastAPI, Pydantic, SQLAlchemy, PostgreSQL, and a separate worker process.
+- Data and identity: Supabase PostgreSQL, Supabase Auth, and Row-Level Security.
+- Lead data: Vibe Prospecting behind a typed adapter.
+- AI: AWS Bedrock behind a typed adapter.
 
-Do not substitute frameworks, package managers, databases, or authentication providers without explicit project approval.
+Do not substitute providers or frameworks without explicit approval.
 
-## Phase-by-phase workflow
+## Phase workflow
 
-1. Read the current phase requirements and identify its explicit boundaries.
-2. Implement only behavior assigned to that phase. Keep later areas as neutral placeholders.
-3. Add configuration through environment variables and commit examples only; never commit secrets.
-4. Add or update tests for behavior introduced in the phase.
-5. Run frontend lint, a production build, and backend tests before committing.
-6. Review the complete diff and ignored files for generated output, dependencies, environments, and credentials.
+1. Implement only the explicitly approved phase.
+2. Keep future areas as honest, inactive placeholders.
+3. Store secrets only in ignored environment files.
+4. Add or update tests for introduced behavior.
+5. Run frontend lint/build and backend tests before a checkpoint.
+6. Review the complete diff and ignored files before committing.
 7. Use a focused checkpoint commit after every approved phase.
 
-## Current boundary: Phase 1
+## Current boundary: architecture foundation
 
-Phase 1 establishes structure, styling, local setup, an API health endpoint, and CORS configuration. It does not create Supabase tables or implement authentication, roles, settings behavior, AI, lead workflows, research, scoring, outreach, messaging, reply detection, or meetings. Future-phase navigation must remain non-functional placeholder content until explicitly approved.
+The foundation establishes topology, configuration contracts, navigation, API health reporting,
+and empty provider/domain boundaries. It does not create Supabase tables, authentication flows,
+roles, lead ingestion, Vibe calls, public research, scoring, Bedrock calls, outreach, or exports.
 
-## Quality expectations
+## Non-negotiable product rules
 
-- Prefer small, typed, testable units and clear names.
-- Do not invent customer data, metrics, charts, or business results.
-- Update `README.md` when setup or commands change.
-- Keep `supabase/migrations/` empty of migrations until a database phase is approved.
+- Hard disqualifiers are deterministic and cannot be silently overridden by AI.
+- Important conclusions must reference stored evidence and direct source links.
+- Unknown information remains unknown; never fabricate estimates or business activity.
+- Never scrape logged-in LinkedIn pages or send LinkedIn messages automatically.
+- Never log, return, commit, or expose provider secrets.

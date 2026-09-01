@@ -17,7 +17,18 @@ async def test_health_check_returns_healthy_status() -> None:
         response = await client.get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "healthy"}
+    payload = response.json()
+    assert payload["status"] == "healthy"
+    assert payload["environment"] == "development"
+    assert set(payload["integrations_configured"]) == {
+        "vibe",
+        "bedrock",
+        "supabase",
+    }
+    assert all(
+        isinstance(is_configured, bool)
+        for is_configured in payload["integrations_configured"].values()
+    )
 
 
 @pytest.mark.anyio

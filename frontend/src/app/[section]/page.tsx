@@ -4,12 +4,11 @@ import { DashboardShell } from "@/components/dashboard-shell";
 
 const sections = {
   leads: "Leads",
-  research: "Research",
-  campaigns: "Campaigns",
-  approvals: "Approvals",
-  conversations: "Conversations",
-  meetings: "Meetings",
-  reports: "Reports",
+  "add-leads": "Add leads",
+  imports: "Imports",
+  evidence: "Evidence",
+  processing: "Processing",
+  exports: "Exports",
   team: "Team",
   settings: "Settings",
 } as const;
@@ -51,10 +50,10 @@ export default async function SectionPage({ params }: SectionPageProps) {
             {sections[section]}
           </p>
           <h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-950">
-            Coming in a later phase.
+            Ready for its approved implementation phase.
           </h1>
           <p className="mt-4 text-base leading-7 text-slate-600">
-            This area is intentionally reserved until its requirements and implementation phase are approved.
+            The architecture boundary is established, but no workflow or sample business data has been added.
           </p>
         </div>
       </section>
