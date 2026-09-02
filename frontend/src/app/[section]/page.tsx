@@ -5,6 +5,8 @@ import { IcpManager } from "@/components/icp-manager";
 import { LeadIntake } from "@/components/lead-intake";
 import { LeadsWorkspace } from "@/components/leads-workspace";
 import { ImportsWorkspace } from "@/components/imports-workspace";
+import { ProcessingWorkspace } from "@/components/processing-workspace";
+import { EvidenceWorkspace } from "@/components/evidence-workspace";
 
 const sections = {
   leads: "Leads",
@@ -55,6 +57,8 @@ export default async function SectionPage({ params }: SectionPageProps) {
   if (section === "add-leads") return <DashboardShell activePath="/add-leads"><LeadIntake /></DashboardShell>;
   if (section === "leads") return <DashboardShell activePath="/leads"><LeadsWorkspace /></DashboardShell>;
   if (section === "imports") return <DashboardShell activePath="/imports"><ImportsWorkspace /></DashboardShell>;
+  if (section === "processing") return <DashboardShell activePath="/processing"><ProcessingWorkspace /></DashboardShell>;
+  if (section === "evidence") return <DashboardShell activePath="/evidence"><EvidenceWorkspace /></DashboardShell>;
 
   return (
     <DashboardShell activePath={`/${section}`}>

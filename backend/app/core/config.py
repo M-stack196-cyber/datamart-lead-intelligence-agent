@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     cors_origins: CsvTuple = ("http://localhost:3000",)
 
     vibe_api_key: str | None = None
+    vibe_enrichment_url: str | None = None
+    vibe_enrichment_enabled: bool = False
+    vibe_worker_name: str = "local-vibe-worker"
     aws_bearer_token_bedrock: str | None = None
     aws_region: str = "us-east-1"
     bedrock_model_id: str | None = None
@@ -43,7 +46,7 @@ class Settings(BaseSettings):
 
     def integration_status(self) -> dict[str, bool]:
         return {
-            "vibe": bool(self.vibe_api_key),
+            "vibe": bool(self.vibe_api_key and self.vibe_enrichment_url and self.vibe_enrichment_enabled),
             "bedrock": bool(self.aws_bearer_token_bedrock and self.bedrock_model_id),
             "supabase": bool(
                 self.supabase_url

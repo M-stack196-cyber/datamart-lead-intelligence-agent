@@ -42,3 +42,11 @@ def test_phase7_locks_direct_lead_table_privileges_to_select() -> None:
     migration = (Path(__file__).parents[2] / "supabase" / "migrations" / "20260901140500_phase7_leads_privilege_lockdown.sql").read_text()
     assert "revoke all privileges on table public.leads from authenticated" in migration
     assert "grant select on table public.leads to authenticated" in migration
+
+
+def test_phase8_claims_enrichment_jobs_without_exposing_worker_rpc() -> None:
+    migration = (Path(__file__).parents[2] / "supabase" / "migrations" / "20260902120000_phase8_vibe_processing.sql").read_text()
+    assert "create or replace function public.claim_next_enrichment_job" in migration
+    assert "for update skip locked" in migration
+    assert "revoke all on function public.claim_next_enrichment_job(text) from public, anon, authenticated" in migration
+    assert "grant execute on function public.claim_next_enrichment_job(text) to service_role" in migration

@@ -81,10 +81,18 @@ npm run dev:backend
 The dashboard runs at `http://localhost:3000`. API health is available at
 `http://localhost:8000/health` and reports only whether integrations are configured, never values.
 
-The worker command is reserved but intentionally exits until its workflow phase is approved:
+## Phase 8 controlled Vibe enrichment
+
+- Accepted imports create queued `enrich` jobs. The worker claims one job at a time and stores only
+  provider-returned lead fields and evidence links.
+- It does not scrape LinkedIn and it never sends outreach messages.
+- Add `VIBE_ENRICHMENT_URL` from your Vibe AgentSource account and set
+  `VIBE_ENRICHMENT_ENABLED=true` only after reviewing Vibe's sample and credit estimate.
+- Start with one job, then inspect Processing and Evidence before increasing the limit:
 
 ```bash
 npm run dev:worker
+# Optional after review: backend/.venv/bin/python -m app.workers.runner --limit 3
 ```
 
 ## Validate
