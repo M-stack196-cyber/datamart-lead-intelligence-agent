@@ -23,11 +23,11 @@ def _claim_job(client: Any, worker_name: str) -> dict[str, Any] | None:
 
 def _complete_job(client: Any, job: dict[str, Any], enrichment: Any) -> None:
     lead_id = job["lead_id"]
-    if enrichment.fields:
+    if enrichment.matched and enrichment.fields:
         client.table("leads").update(enrichment.fields).eq("id", lead_id).execute()
     for item in enrichment.evidence:
         client.table("evidence").insert({"lead_id": lead_id, "evidence_type": item.evidence_type, "title": item.title, "source_url": item.source_url, "publisher": item.publisher, "excerpt": item.excerpt, "supports_fields": item.supports_fields, "metadata": item.metadata}).execute()
-    client.table("processing_jobs").update({"status": "completed", "completed_at": datetime.now(timezone.utc).isoformat(), "result": {"provider": "vibe", "updated_fields": sorted(enrichment.fields), "evidence_count": len(enrichment.evidence)}, "error_message": None}).eq("id", job["id"]).execute()
+    client.table("processing_jobs").update({"status": "completed", "completed_at": datetime.now(timezone.utc).isoformat(), "result": {"provider": "agentsource", "matched": enrichment.matched, "prospect_id": enrichment.prospect_id, "updated_fields": sorted(enrichment.fields), "evidence_count": len(enrichment.evidence), "raw_result": enrichment.raw_result}, "error_message": None}).eq("id", job["id"]).execute()
 
 
 def _fail_job(client: Any, job: dict[str, Any], error: Exception) -> None:
@@ -38,16 +38,16 @@ def _fail_job(client: Any, job: dict[str, Any], error: Exception) -> None:
 def run_once() -> bool:
     settings = get_settings()
     if not settings.vibe_enrichment_enabled:
-        raise RuntimeError("Set VIBE_ENRICHMENT_ENABLED=true only after approving the Vibe cost estimate")
-    if not settings.vibe_api_key or not settings.vibe_enrichment_url:
-        raise RuntimeError("VIBE_API_KEY and VIBE_ENRICHMENT_URL are required")
+        raise RuntimeError("Set VIBE_ENRICHMENT_ENABLED=true only after approving the AgentSource cost estimate")
+    if not settings.vibe_api_key:
+        raise RuntimeError("VIBE_API_KEY is required")
     client = _service_client()
     job = _claim_job(client, settings.vibe_worker_name)
     if not job:
         return False
     try:
         lead = client.table("leads").select("*").eq("id", job["lead_id"]).single().execute().data
-        enrichment = VibeProspectingClient(settings.vibe_enrichment_url, settings.vibe_api_key).enrich(lead)
+        enrichment = VibeProspectingClient(settings.vibe_api_key, settings.vibe_api_base_url).enrich(lead)
         _complete_job(client, job, enrichment)
     except Exception as exc:
         _fail_job(client, job, exc)
@@ -70,5 +70,3 @@ if __name__ == "__main__":
     main()
 
 
-if __name__ == "__main__":
-    main()
