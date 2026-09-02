@@ -32,3 +32,41 @@ def test_vibe_client_completes_without_a_second_call_when_no_match() -> None:
     assert result.prospect_id is None
     assert post.call_count == 1
 
+
+def test_vibe_client_whitelists_safe_fields_and_builds_evidence() -> None:
+    match_response = Mock()
+    match_response.json.return_value = {"matched_prospects": [{"prospect_id": "abc123"}]}
+    match_response.raise_for_status.return_value = None
+    profile_response = Mock()
+    profile_response.json.return_value = {
+        "data": {
+            "full_name": "Aisha Rafiq",
+            "job_title": "Founder",
+            "company_name": "Datamart",
+            "country_name": "Pakistan",
+            "annual_revenue": 1000000,
+            "status": "active",
+            "evidence": [
+                {
+                    "title": "Founder profile",
+                    "source_url": "https://example.com/founder",
+                    "evidence_type": "other",
+                    "publisher": "AgentSource",
+                    "excerpt": "Strong fit",
+                    "supports_fields": ["person_name", "title"],
+                    "metadata": {"confidence": 0.92},
+                }
+            ],
+        }
+    }
+    profile_response.raise_for_status.return_value = None
+
+    with patch("app.integrations.vibe.client.httpx.post", side_effect=[match_response, profile_response]):
+        result = VibeProspectingClient("secret").enrich({"id": "lead-1", "linkedin_url": "https://linkedin.com/in/aisha", "company_name": "Old"})
+
+    assert result.fields == {"person_name": "Aisha Rafiq", "title": "Founder", "company_name": "Datamart", "country": "Pakistan"}
+    assert result.evidence[0].title == "Founder profile"
+    assert result.evidence[0].supports_fields == ["person_name", "title"]
+    assert "annual_revenue" not in result.fields
+    assert "status" not in result.fields
+

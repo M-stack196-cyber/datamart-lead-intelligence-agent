@@ -29,6 +29,15 @@ class VibeEnrichment:
 class VibeProspectingClient:
     """Use AgentSource Match, then Profiles Enrich; never scrape or message LinkedIn."""
 
+    SAFE_FIELD_MAP = {
+        "full_name": "person_name",
+        "job_title": "title",
+        "company_name": "company_name",
+        "country_name": "country",
+        "industry": "industry",
+        "email": "email",
+    }
+
     def __init__(self, api_key: str, base_url: str = "https://api.explorium.ai") -> None:
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
@@ -62,19 +71,40 @@ class VibeProspectingClient:
         prospect_id = first.get("prospect_id")
         return str(prospect_id) if prospect_id else None
 
-    @staticmethod
-    def _supported_fields(data: dict[str, Any]) -> dict[str, Any]:
-        mapping = {
-            "full_name": "person_name",
-            "job_title": "title",
-            "company_name": "company_name",
-            "country_name": "country",
-        }
+    @classmethod
+    def _supported_fields(cls, data: dict[str, Any]) -> dict[str, Any]:
         return {
-            target: data[source]
-            for source, target in mapping.items()
-            if data.get(source) not in (None, "")
+            target: value
+            for source, target in cls.SAFE_FIELD_MAP.items()
+            if (value := data.get(source)) not in (None, "")
         }
+
+    @staticmethod
+    def _evidence_items(data: dict[str, Any]) -> list[VibeEvidence]:
+        evidence = data.get("evidence")
+        if not isinstance(evidence, list):
+            return []
+
+        items: list[VibeEvidence] = []
+        for item in evidence:
+            if not isinstance(item, dict):
+                continue
+            url = item.get("source_url")
+            title = item.get("title")
+            if not isinstance(url, str) or not url or not isinstance(title, str) or not title:
+                continue
+            items.append(
+                VibeEvidence(
+                    title=title,
+                    source_url=url,
+                    evidence_type=str(item.get("evidence_type", "other")),
+                    publisher=item.get("publisher"),
+                    excerpt=item.get("excerpt"),
+                    supports_fields=item.get("supports_fields") if isinstance(item.get("supports_fields"), list) else [],
+                    metadata=item.get("metadata") if isinstance(item.get("metadata"), dict) else {},
+                )
+            )
+        return items
 
     def enrich(self, lead: dict[str, Any]) -> VibeEnrichment:
         match_response = httpx.post(
@@ -113,7 +143,7 @@ class VibeProspectingClient:
             data = {}
         return VibeEnrichment(
             fields=self._supported_fields(data),
-            evidence=[],
+            evidence=self._evidence_items(data),
             matched=True,
             prospect_id=prospect_id,
             raw_result={"match": match_body, "profile": profile_body},
