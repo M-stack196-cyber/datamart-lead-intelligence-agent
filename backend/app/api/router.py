@@ -15,10 +15,17 @@ router = APIRouter()
 async def health_check() -> HealthResponse:
     """Report process health and non-secret integration readiness."""
     settings = get_settings()
+    integrations = settings.integration_status()
+    ready = settings.app_env != "production" or bool(
+        integrations["supabase"]
+        and integrations["bedrock"]
+        and integrations["vibe"]
+    )
     return HealthResponse(
         status="healthy",
         environment=settings.app_env,
-        integrations_configured=settings.integration_status(),
+        ready=ready,
+        integrations_configured=integrations,
     )
 
 

@@ -8,4 +8,5 @@ class HealthResponse(BaseModel):
 
     status: Literal["healthy"]
     environment: str
+    ready: bool
     integrations_configured: dict[str, bool]

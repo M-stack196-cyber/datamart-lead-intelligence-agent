@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Annotated
 
-from pydantic import BeforeValidator
+from pydantic import BeforeValidator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -43,6 +43,24 @@ class Settings(BaseSettings):
 
     frontend_url: str = "http://localhost:3000"
     backend_url: str = "http://localhost:8000"
+
+    @model_validator(mode="after")
+    def validate_runtime_environment(self) -> "Settings":
+        if self.app_env == "production":
+            missing = []
+            if not self.supabase_url:
+                missing.append("SUPABASE_URL")
+            if not self.supabase_anon_key:
+                missing.append("SUPABASE_ANON_KEY")
+            if not self.supabase_service_role_key:
+                missing.append("SUPABASE_SERVICE_ROLE_KEY")
+            if not self.database_url:
+                missing.append("DATABASE_URL")
+            if missing:
+                raise ValueError(
+                    "Production requires environment variables: " + ", ".join(missing)
+                )
+        return self
 
     def integration_status(self) -> dict[str, bool]:
         return {
