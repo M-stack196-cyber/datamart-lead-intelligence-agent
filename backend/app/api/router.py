@@ -7,6 +7,7 @@ from app.repositories.icp_repository import icp_repository
 from app.schemas.icp import IcpDefinition, IcpVersionSummary, LeadProfile, ScoreResult
 from app.scoring.icp_engine import IcpScoringEngine
 from app.schemas.intake import LeadIntakeBatch, LeadIntakeValidation
+from app.services.approval import ApprovalDecision, ApprovalEngine
 
 router = APIRouter()
 
@@ -57,3 +58,23 @@ async def validate_lead_intake(
 ) -> LeadIntakeValidation:
     """Validate and normalize a lead batch without storing or processing it."""
     return LeadIntakeValidation(valid=True, count=len(batch.rows), rows=batch.rows)
+
+
+@router.post("/decision/lead", response_model=ApprovalDecision, tags=["decisions"])
+async def decide_lead_approval(
+    payload: dict,
+    _user: CurrentUser = Depends(require_user),
+) -> ApprovalDecision:
+    """Combine ICP fit and buying intent into a single approval decision for the review queue."""
+    lead = payload.get("lead", {}) if isinstance(payload, dict) else {}
+    icp_score = int(payload.get("icp_score", 0))
+    intent_score = int(payload.get("intent_score", 0))
+    evidence_urls = payload.get("evidence_urls", [])
+    if not isinstance(evidence_urls, list):
+        evidence_urls = []
+    return ApprovalEngine().decide(
+        lead,
+        icp_score=icp_score,
+        intent_score=intent_score,
+        evidence_urls=evidence_urls,
+    )

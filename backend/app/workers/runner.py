@@ -8,6 +8,7 @@ from supabase import create_client
 
 from app.core.config import get_settings
 from app.integrations.vibe import VibeProspectingClient
+from app.workers.queue import InMemoryJobQueue, JobStatus
 
 
 def _service_client():
@@ -33,6 +34,33 @@ def _complete_job(client: Any, job: dict[str, Any], enrichment: Any) -> None:
 def _fail_job(client: Any, job: dict[str, Any], error: Exception) -> None:
     status = "failed" if int(job["attempts"]) >= int(job["max_attempts"]) else "queued"
     client.table("processing_jobs").update({"status": status, "error_message": str(error)[:1000], "claimed_at": None, "claimed_by": None}).eq("id", job["id"]).execute()
+
+
+def process_next_job(queue: InMemoryJobQueue, provider: Any, *, worker_name: str = "local-vibe-worker") -> bool:
+    job = queue.claim_next(worker_name)
+    if job is None:
+        return False
+
+    try:
+        lead = job.payload.get("lead", {}) if isinstance(job.payload, dict) else {}
+        enrichment = provider.enrich(lead)
+        fields = getattr(enrichment, "fields", {}) or {}
+        evidence = getattr(enrichment, "evidence", []) or []
+        result = {
+            "provider": "agentsource",
+            "matched": bool(getattr(enrichment, "matched", False)),
+            "prospect_id": getattr(enrichment, "prospect_id", None),
+            "updated_fields": sorted(fields),
+            "evidence_count": len(evidence),
+            "raw_result": getattr(enrichment, "raw_result", {}),
+        }
+        if getattr(enrichment, "matched", False) and fields:
+            result["updated_fields"] = sorted(fields)
+        queue.complete_job(job.id, result)
+    except Exception as exc:
+        queue.fail_job(job.id, exc)
+        raise
+    return True
 
 
 def run_once() -> bool:
