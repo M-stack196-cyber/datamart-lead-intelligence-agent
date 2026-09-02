@@ -131,3 +131,32 @@ def test_icp_repository_raises_domain_error_for_invalid_active_version_state(tmp
 
     with pytest.raises(RepositoryError, match="Expected exactly one active ICP version"):
         repository.get_active()
+
+
+def test_scoring_evidence_urls_are_normalized_and_deduplicated() -> None:
+    result = IcpScoringEngine(icp_repository.get_active()).score(
+        LeadProfile(
+            company_name="Evidence Verified Co",
+            annual_revenue=1_800_000,
+            employee_count=18,
+            country="United States",
+            industry="B2B SaaS",
+            business_model="SaaS",
+            growth_stage="Post-PMF scaling",
+            buying_behavior="Retainer-ready with a defined SOW",
+            title="VP of Engineering",
+            has_defined_software_need=True,
+            accepts_distributed_delivery=True,
+            evidence_urls=[
+                " https://example.com/jobs/senior-python ",
+                "https://example.com/jobs/senior-python",
+                "javascript:alert(1)",
+                "https://example.com/news/launch",
+            ],
+        )
+    )
+
+    assert result.evidence_urls == [
+        "https://example.com/jobs/senior-python",
+        "https://example.com/news/launch",
+    ]

@@ -1,5 +1,6 @@
 from collections.abc import Callable
 import re
+from urllib.parse import urlparse
 
 from app.schemas.icp import IcpDefinition, LeadProfile, RuleEvaluation, ScoreResult
 
@@ -20,8 +21,31 @@ class IcpScoringEngine:
     def __init__(self, definition: IcpDefinition) -> None:
         self.definition = definition
 
+    @staticmethod
+    def _normalized_evidence_urls(urls: list[str] | None) -> list[str]:
+        seen: set[str] = set()
+        normalized: list[str] = []
+        for raw in urls or []:
+            if not isinstance(raw, str):
+                continue
+            candidate = raw.strip()
+            if not candidate:
+                continue
+            parsed = urlparse(candidate)
+            if parsed.scheme.lower() not in {"http", "https"}:
+                continue
+            if not parsed.netloc:
+                continue
+            cleaned = candidate.split("#", 1)[0].rstrip("/")
+            if cleaned.lower() in seen:
+                continue
+            seen.add(cleaned.lower())
+            normalized.append(cleaned)
+        return normalized
+
     def score(self, lead: LeadProfile) -> ScoreResult:
         hard_stops = self._hard_stops(lead)
+        evidence_urls = self._normalized_evidence_urls(lead.evidence_urls)
         checks: dict[str, tuple[object, Callable[[], bool], str, str]] = {
             "revenue_fit": (
                 lead.annual_revenue,
@@ -112,7 +136,7 @@ class IcpScoringEngine:
             persona=self._persona(lead.title),
             hard_stops=hard_stops,
             evaluations=evaluations,
-            evidence_urls=lead.evidence_urls,
+            evidence_urls=evidence_urls,
         )
 
     def _hard_stops(self, lead: LeadProfile) -> list[str]:
