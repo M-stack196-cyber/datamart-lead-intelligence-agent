@@ -3,6 +3,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.api.auth import CurrentUser, require_user
 from app.main import app
+from app.repositories.base import RepositoryError
 from app.repositories.icp_repository import IcpRepository, icp_repository
 from app.schemas.icp import LeadProfile
 from app.scoring.icp_engine import IcpScoringEngine
@@ -117,3 +118,16 @@ def test_icp_draft_publish_preserves_history(tmp_path) -> None:
     assert published.employee_max == 75
     assert published.approved_by == "Admin User"
     assert {item.status for item in versions} == {"active", "archived"}
+
+
+def test_icp_repository_raises_domain_error_for_invalid_active_version_state(tmp_path) -> None:
+    repository = IcpRepository(tmp_path)
+
+    with pytest.raises(RepositoryError, match="Expected exactly one active ICP version"):
+        repository.get_active()
+
+    draft = icp_repository.get_active().model_copy(update={"id": "draft-only", "status": "draft"})
+    repository._write(draft)
+
+    with pytest.raises(RepositoryError, match="Expected exactly one active ICP version"):
+        repository.get_active()

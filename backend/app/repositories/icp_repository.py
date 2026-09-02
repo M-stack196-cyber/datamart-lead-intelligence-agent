@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from app.repositories.base import RepositoryError, RepositoryNotFoundError
 from app.schemas.icp import IcpDefinition, IcpStatus, IcpVersionSummary
 
 
@@ -33,7 +34,7 @@ class IcpRepository:
     def get_active(self) -> IcpDefinition:
         active = [item for item in (self._read(path) for path in self._paths()) if item.status == IcpStatus.ACTIVE]
         if len(active) != 1:
-            raise RuntimeError(f"Expected exactly one active ICP version, found {len(active)}")
+            raise RepositoryError(f"Expected exactly one active ICP version, found {len(active)}")
         return active[0]
 
     def get(self, icp_id: str) -> IcpDefinition:
@@ -41,7 +42,7 @@ class IcpRepository:
             definition = self._read(path)
             if definition.id == icp_id:
                 return definition
-        raise KeyError(icp_id)
+        raise RepositoryNotFoundError(icp_id)
 
     def create_draft(self, changes: dict[str, Any]) -> IcpDefinition:
         """Create a new immutable-version candidate from the active definition."""
@@ -62,11 +63,16 @@ class IcpRepository:
         self._write(validated)
         return validated
 
+    def _require_active_singleton(self) -> None:
+        active = [item for item in (self._read(path) for path in self._paths()) if item.status == IcpStatus.ACTIVE]
+        if len(active) != 1:
+            raise RepositoryError(f"Expected exactly one active ICP version, found {len(active)}")
+
     def publish(self, icp_id: str, approved_by: str) -> IcpDefinition:
         """Archive the active version and activate a reviewed draft."""
         candidate = self.get(icp_id)
         if candidate.status != IcpStatus.DRAFT:
-            raise ValueError("Only a draft ICP can be published")
+            raise RepositoryError("Only a draft ICP can be published")
         active = self.get_active()
         self._write(active.model_copy(update={"status": IcpStatus.ARCHIVED}))
         published = candidate.model_copy(
@@ -78,7 +84,7 @@ class IcpRepository:
     def archive_draft(self, icp_id: str) -> IcpDefinition:
         candidate = self.get(icp_id)
         if candidate.status != IcpStatus.DRAFT:
-            raise ValueError("Only a draft ICP can be archived directly")
+            raise RepositoryError("Only a draft ICP can be archived directly")
         archived = candidate.model_copy(update={"status": IcpStatus.ARCHIVED})
         self._write(archived)
         return archived
