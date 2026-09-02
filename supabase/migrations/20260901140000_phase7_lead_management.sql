@@ -96,9 +96,12 @@ begin
     raise exception 'Lead assignee must be an active sales user';
   end if;
 
-  update public.leads set assigned_to = assignee_id where id = target_id returning * into updated_lead;
+  update public.leads
+  set assigned_to = assignee_id
+  where id = target_id and status <> 'disqualified' and assigned_to is distinct from assignee_id
+  returning * into updated_lead;
   if updated_lead.id is null then
-    raise exception 'Lead not found';
+    raise exception 'Lead must be approved for sales and cannot be disqualified';
   end if;
   insert into public.audit_log(actor_id, action, entity_type, entity_id, details)
   values (actor_id, 'lead_assigned', 'lead', target_id::text, jsonb_build_object('assigned_to', assignee_id));
