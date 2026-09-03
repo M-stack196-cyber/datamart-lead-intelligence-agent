@@ -36,6 +36,10 @@ class Settings(BaseSettings):
     aws_bearer_token_bedrock: str | None = None
     aws_region: str = "us-east-1"
     bedrock_model_id: str | None = None
+    gmail_client_id: str | None = None
+    gmail_client_secret: str | None = None
+    gmail_refresh_token: str | None = None
+    gmail_sender_email: str | None = None
 
     supabase_url: str | None = None
     supabase_anon_key: str | None = None
@@ -67,6 +71,12 @@ class Settings(BaseSettings):
         return {
             "vibe": bool(self.vibe_api_key and self.vibe_enrichment_enabled),
             "bedrock": bool(self.aws_bearer_token_bedrock and self.bedrock_model_id),
+            "gmail": bool(
+                self.gmail_client_id
+                and self.gmail_client_secret
+                and self.gmail_refresh_token
+                and self.gmail_sender_email
+            ),
             "supabase": bool(
                 self.supabase_url
                 and self.supabase_anon_key

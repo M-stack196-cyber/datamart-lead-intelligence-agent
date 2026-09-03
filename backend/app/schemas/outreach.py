@@ -11,3 +11,7 @@ class GenerateOutreachRequest(BaseModel):
 class ReviewOutreachRequest(BaseModel):
     action: Literal["approved", "rejected"]
     review_notes: str = Field(min_length=1, max_length=2000)
+
+
+class SendEmailRequest(BaseModel):
+    confirm: Literal[True]

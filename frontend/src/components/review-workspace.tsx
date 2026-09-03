@@ -254,7 +254,7 @@ export function ReviewWorkspace() {
                   )}
                 </div>
 
-                <OutreachDraftPanel leadId={lead.id} role={role} drafts={lead.outreach_drafts} evidence={lead.evidence} onChanged={load} />
+                <OutreachDraftPanel leadId={lead.id} role={role} drafts={lead.outreach_drafts} evidence={lead.evidence} recipient={lead.email} salesApproved={Boolean(lead.sales_approved_at)} onChanged={load} />
 
                 {role === "admin" && (
                   <div className="mt-6 border-t border-slate-200 pt-5">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
 
 export type OutreachDraft = {
@@ -23,17 +23,34 @@ type Props = {
   role: "admin" | "manager" | "sales" | null;
   drafts: OutreachDraft[];
   evidence: EvidenceLink[];
+  recipient: string | null;
+  salesApproved: boolean;
   onChanged: () => Promise<void>;
 };
 
-export function OutreachDraftPanel({ leadId, role, drafts, evidence, onChanged }: Props) {
+export function OutreachDraftPanel({ leadId, role, drafts, evidence, recipient, salesApproved, onChanged }: Props) {
   const supabase = useMemo(() => createBrowserSupabaseClient(), []);
   const [edits, setEdits] = useState<Record<string, { subject: string; body: string }>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [gmailConfigured, setGmailConfigured] = useState<boolean | null>(null);
+  const [confirmingDraft, setConfirmingDraft] = useState("");
   const canReview = role === "admin" || role === "manager";
+
+  useEffect(() => {
+    let active = true;
+    fetch((process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000") + "/health")
+      .then((response) => response.json())
+      .then((payload) => {
+        if (active) setGmailConfigured(Boolean(payload.integrations_configured?.gmail));
+      })
+      .catch(() => {
+        if (active) setGmailConfigured(false);
+      });
+    return () => { active = false; };
+  }, []);
 
   async function callBackend(path: string, body: object) {
     if (!supabase) throw new Error("Supabase is not configured");
@@ -110,6 +127,22 @@ export function OutreachDraftPanel({ leadId, role, drafts, evidence, onChanged }
     setMessage("Approved LinkedIn message copied. Sending remains manual.");
   }
 
+  async function sendEmail(draft: OutreachDraft) {
+    if (draft.status !== "approved" || draft.channel !== "email") return;
+    setBusy(draft.id);
+    setError("");
+    try {
+      const result = await callBackend("/outreach/drafts/" + draft.id + "/send-email", { confirm: true });
+      setMessage("Email sent with Gmail. Provider message ID: " + result.provider_message_id);
+      setConfirmingDraft("");
+      await onChanged();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to send email");
+    } finally {
+      setBusy("");
+    }
+  }
+
   return (
     <div className="mt-6 border-t border-slate-200 pt-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -122,7 +155,8 @@ export function OutreachDraftPanel({ leadId, role, drafts, evidence, onChanged }
         {drafts.length === 0 ? <p className="text-sm text-slate-500">No outreach draft has been generated.</p> : drafts.map((draft) => {
           const edit = edits[draft.id] || { subject: draft.subject || "", body: draft.body };
           const usedEvidence = evidence.filter((item) => draft.evidence_ids.includes(item.id));
-          return <article key={draft.id} className="rounded-2xl border border-slate-200 p-4"><div className="flex items-center justify-between gap-3"><p className="text-sm font-bold capitalize">{draft.channel} · step 1</p><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold capitalize text-slate-700">{draft.status}</span></div>{draft.channel === "email" && <input aria-label="Email subject" value={edit.subject} readOnly={!canReview || draft.status !== "draft"} onChange={(event) => setEdits((current) => ({ ...current, [draft.id]: { ...edit, subject: event.target.value } }))} className="mt-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm read-only:bg-slate-50" />}<textarea aria-label={draft.channel + " draft body"} rows={9} value={edit.body} readOnly={!canReview || draft.status !== "draft"} onChange={(event) => setEdits((current) => ({ ...current, [draft.id]: { ...edit, body: event.target.value } }))} className="mt-3 w-full rounded-lg border border-slate-300 p-3 text-sm leading-6 read-only:bg-slate-50" /><div className="mt-3"><p className="text-xs font-bold uppercase text-slate-500">Evidence used</p>{usedEvidence.map((item) => <a key={item.id} href={item.source_url} target="_blank" rel="noreferrer" className="mt-1 block text-xs font-bold text-teal-700">{item.title} ↗</a>)}</div>{draft.review_notes && <p className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">Review notes: {draft.review_notes}</p>}{canReview && draft.status === "draft" && <><input aria-label="Draft review notes" value={notes[draft.id] || ""} onChange={(event) => setNotes((current) => ({ ...current, [draft.id]: event.target.value }))} placeholder="Review notes required" className="mt-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" /><div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={busy === draft.id} onClick={() => void save(draft)} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold">Save edits</button>{role === "admin" && <button type="button" disabled={busy === draft.id} onClick={() => void review(draft, "approved")} className="rounded-lg bg-teal-600 px-3 py-2 text-xs font-bold text-white">Approve draft</button>}<button type="button" disabled={busy === draft.id} onClick={() => void review(draft, "rejected")} className="rounded-lg border border-red-300 px-3 py-2 text-xs font-bold text-red-800">Reject draft</button></div></>}{draft.status === "approved" && draft.channel === "linkedin" && <button type="button" onClick={() => void copyLinkedIn(draft)} className="mt-3 rounded-lg bg-slate-950 px-3 py-2 text-xs font-bold text-white">Copy LinkedIn message</button>}</article>;
+          const emailEnabled = draft.status === "approved" && draft.channel === "email" && gmailConfigured === true && salesApproved && Boolean(recipient);
+          return <article key={draft.id} className="rounded-2xl border border-slate-200 p-4"><div className="flex items-center justify-between gap-3"><p className="text-sm font-bold capitalize">{draft.channel} · step 1</p><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold capitalize text-slate-700">{draft.status}</span></div>{draft.channel === "email" && <input aria-label="Email subject" value={edit.subject} readOnly={!canReview || draft.status !== "draft"} onChange={(event) => setEdits((current) => ({ ...current, [draft.id]: { ...edit, subject: event.target.value } }))} className="mt-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm read-only:bg-slate-50" />}<textarea aria-label={draft.channel + " draft body"} rows={9} value={edit.body} readOnly={!canReview || draft.status !== "draft"} onChange={(event) => setEdits((current) => ({ ...current, [draft.id]: { ...edit, body: event.target.value } }))} className="mt-3 w-full rounded-lg border border-slate-300 p-3 text-sm leading-6 read-only:bg-slate-50" /><div className="mt-3"><p className="text-xs font-bold uppercase text-slate-500">Evidence used</p>{usedEvidence.map((item) => <a key={item.id} href={item.source_url} target="_blank" rel="noreferrer" className="mt-1 block text-xs font-bold text-teal-700">{item.title} ↗</a>)}</div>{draft.review_notes && <p className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">Review notes: {draft.review_notes}</p>}{canReview && draft.status === "draft" && <><input aria-label="Draft review notes" value={notes[draft.id] || ""} onChange={(event) => setNotes((current) => ({ ...current, [draft.id]: event.target.value }))} placeholder="Review notes required" className="mt-3 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" /><div className="mt-3 flex flex-wrap gap-2"><button type="button" disabled={busy === draft.id} onClick={() => void save(draft)} className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold">Save edits</button>{role === "admin" && <button type="button" disabled={busy === draft.id} onClick={() => void review(draft, "approved")} className="rounded-lg bg-teal-600 px-3 py-2 text-xs font-bold text-white">Approve draft</button>}<button type="button" disabled={busy === draft.id} onClick={() => void review(draft, "rejected")} className="rounded-lg border border-red-300 px-3 py-2 text-xs font-bold text-red-800">Reject draft</button></div></>}{draft.status === "approved" && draft.channel === "linkedin" && <button type="button" onClick={() => void copyLinkedIn(draft)} className="mt-3 rounded-lg bg-slate-950 px-3 py-2 text-xs font-bold text-white">Copy LinkedIn message</button>}{draft.status === "approved" && draft.channel === "email" && <div className="mt-3">{gmailConfigured === false && <p className="mb-2 text-xs font-semibold text-amber-800">Gmail sending is disabled because credentials are not configured.</p>}{!salesApproved && <p className="mb-2 text-xs font-semibold text-amber-800">Lead sales approval is required before sending.</p>}{!recipient && <p className="mb-2 text-xs font-semibold text-amber-800">A valid lead email is required before sending.</p>}{confirmingDraft !== draft.id ? <button type="button" disabled={!emailEnabled || Boolean(busy)} onClick={() => setConfirmingDraft(draft.id)} className="rounded-lg bg-teal-700 px-3 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">Review email send</button> : <div className="rounded-xl border border-red-200 bg-red-50 p-3"><p className="text-xs font-bold text-red-900">Final confirmation: send this exact approved draft to {recipient}?</p><div className="mt-2 flex gap-2"><button type="button" disabled={busy === draft.id} onClick={() => void sendEmail(draft)} className="rounded-lg bg-red-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-40">Confirm send email</button><button type="button" onClick={() => setConfirmingDraft("")} className="rounded-lg border border-red-300 px-3 py-2 text-xs font-bold text-red-800">Cancel</button></div></div>}</div>}</article>;
         })}
       </div>
     </div>

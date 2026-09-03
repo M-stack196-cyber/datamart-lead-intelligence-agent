@@ -83,6 +83,7 @@ add missing variables without replacing existing secrets.
    - `20260903081001_complete_enrichment_intelligence_pipeline.sql`
    - `20260903081632_role_enforced_lead_review_workflow.sql`
    - `20260903082524_evidence_grounded_outreach_drafts.sql`
+   - `20260903083500_explicitly_approved_gmail_delivery.sql`
 3. With the Supabase CLI installed and the project linked, preview with `supabase db push --dry-run`, apply with `supabase db push`, and confirm local/remote history with `supabase migration list`.
 4. Add the project URL and publishable/anon key to the frontend variables in the ignored `.env`.
 5. Add the URL, anon key, service-role key, and database URL to the backend variables.

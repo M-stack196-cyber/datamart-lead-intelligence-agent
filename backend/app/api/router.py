@@ -10,6 +10,9 @@ from app.scoring.icp_engine import IcpScoringEngine
 from app.schemas.intake import LeadIntakeBatch, LeadIntakeValidation
 from app.services.approval import ApprovalDecision, ApprovalEngine
 from app.schemas.outreach import GenerateOutreachRequest, ReviewOutreachRequest
+from app.schemas.outreach import SendEmailRequest
+from app.integrations.gmail import GmailClient, GmailDeliveryError
+from app.services.email_delivery import EmailDeliveryService
 from app.services.outreach import OutreachDraftEngine, validate_outreach_for_approval
 
 router = APIRouter()
@@ -86,6 +89,74 @@ def _review_outreach_draft(
         .execute()
         .data
     )
+
+
+def _send_approved_email(settings: Settings, actor_id: str, draft_id: str) -> dict:
+    if not settings.integration_status()["gmail"]:
+        raise RuntimeError("Gmail sending is disabled until all Gmail settings are configured")
+    client = _backend_client(settings)
+    attempt = (
+        client.rpc(
+            "begin_email_delivery_attempt",
+            {
+                "target_draft_id": draft_id,
+                "actor_id": actor_id,
+                "sender_email": settings.gmail_sender_email,
+            },
+        )
+        .execute()
+        .data
+    )
+    if not isinstance(attempt, dict) or not attempt.get("attempt_id"):
+        raise RuntimeError("Email delivery attempt could not be created")
+
+    transport = GmailClient(
+        settings.gmail_client_id or "",
+        settings.gmail_client_secret or "",
+        settings.gmail_refresh_token or "",
+    )
+    try:
+        delivery = EmailDeliveryService(transport).send(
+            sender=str(attempt["sender"]),
+            recipient=str(attempt["recipient"]),
+            subject=str(attempt["subject"]),
+            body=str(attempt["body"]),
+        )
+    except Exception as exc:
+        client.rpc(
+            "finish_email_delivery_attempt",
+            {
+                "target_attempt_id": attempt["attempt_id"],
+                "succeeded": False,
+                "provider_message_id": None,
+                "safe_error": "Gmail provider request failed",
+                "actor_id": actor_id,
+            },
+        ).execute()
+        if isinstance(exc, ValueError):
+            raise
+        raise GmailDeliveryError("Gmail provider request failed") from exc
+
+    result = (
+        client.rpc(
+            "finish_email_delivery_attempt",
+            {
+                "target_attempt_id": attempt["attempt_id"],
+                "succeeded": True,
+                "provider_message_id": delivery.message_id,
+                "safe_error": None,
+                "actor_id": actor_id,
+            },
+        )
+        .execute()
+        .data
+    )
+    return {
+        "status": "sent",
+        "attempt_id": attempt["attempt_id"],
+        "provider_message_id": delivery.message_id,
+        "delivery": result,
+    }
     if not draft:
         raise ValueError("Outreach draft not found")
     evidence_ids = draft.get("evidence_ids") or []
@@ -229,3 +300,22 @@ async def review_outreach_draft(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail="Unable to review outreach draft") from exc
+
+
+@router.post("/outreach/drafts/{draft_id}/send-email", tags=["outreach"])
+async def send_approved_email(
+    draft_id: str,
+    _request: SendEmailRequest,
+    user: CurrentUser = Depends(require_roles("admin", "manager", "sales")),
+) -> dict:
+    """Send only after the caller posts an explicit literal confirmation."""
+    try:
+        return _send_approved_email(get_settings(), user.id, draft_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except GmailDeliveryError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Unable to send approved email") from exc

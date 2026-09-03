@@ -62,3 +62,27 @@ async def test_admin_can_approve_exact_reviewed_draft() -> None:
 
     assert response.status_code == 200
     assert response.json()["status"] == "approved"
+
+
+@pytest.mark.anyio
+async def test_email_endpoint_requires_literal_confirmation_and_never_sends_implicitly() -> None:
+    with patch(
+        "app.api.router._send_approved_email",
+        return_value={"status": "sent", "provider_message_id": "gmail-1"},
+    ) as send:
+        rejected = await request_as(
+            "sales",
+            "POST",
+            "/outreach/drafts/draft-1/send-email",
+            {"confirm": False},
+        )
+        accepted = await request_as(
+            "sales",
+            "POST",
+            "/outreach/drafts/draft-1/send-email",
+            {"confirm": True},
+        )
+
+    assert rejected.status_code == 422
+    assert accepted.status_code == 200
+    assert send.call_count == 1
