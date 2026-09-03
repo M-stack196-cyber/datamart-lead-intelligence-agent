@@ -31,10 +31,14 @@ both enforce admin, manager, and sales access.
 
 ## Current checkpoint
 
-Phase 5 adds Supabase Auth, persistent business tables, RLS, audit records, server-validated API tokens,
-and protected Next.js routes. Admin, manager, and sales permissions are resolved from `profiles`; role
-values are never trusted from browser input or user-editable metadata. Provider adapters, research,
-lead processing, and automatic outreach remain inactive.
+Phase 9 adds production hardening and deployment readiness. The verified codebase includes versioned ICP
+scoring, intake validation, Vibe adapter boundaries, live capture and worker processing, intent-based
+scoring, approval review, and sales handoff controls. The app keeps future areas as honest inactive
+placeholders, including team/settings surfaces, until they are explicitly approved for implementation.
+
+The project still enforces backend-only secrets, strict role checks, and deterministic qualification logic.
+Provider adapters may enrich leads and evidence, but AI is never allowed to silently override hard
+exclusion or approval rules.
 
 ## Access matrix
 

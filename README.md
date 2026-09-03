@@ -4,9 +4,24 @@ An evidence-backed lead research and qualification workspace for Datamart. The a
 uses Vibe Prospecting for B2B data, deterministic rules for ICP qualification, AWS Bedrock for
 evidence-grounded analysis, and Supabase for PostgreSQL and authentication.
 
-This checkpoint contains the Phase 5 data and identity foundation. It includes a Supabase schema,
-authentication, role-aware access, protected dashboard routes, and versioned ICP controls. Live lead
-research and provider calls remain intentionally inactive until their implementation phases are approved.
+This checkpoint contains the verified lead intelligence workflow through Phase 9. It includes versioned
+ICP scoring, validated lead intake, Vibe enrichment boundaries, live capture and intent scoring,
+decision fusion, review/approval flows, and the sales handoff/export gate. Sensitive runtime
+configuration remains backend-only, and future sections such as team settings remain honest placeholders
+until explicitly approved.
+
+## Known phase status
+
+1. Phase 0 — architecture foundation: complete
+2. Phase 1 — ICP intelligence and versioning: complete
+3. Phase 2 — lead intake and validation: complete
+4. Phase 3 — Vibe provider boundary: complete
+5. Phase 4 — live capture and queueing: complete
+6. Phase 5 — intent scoring and evidence-based ranking: complete
+7. Phase 6 — decision fusion and review readiness: complete
+8. Phase 7 — approval review and outreach review: complete
+9. Phase 8 — sales handoff and export controls: complete
+10. Phase 9 — production hardening and deployment readiness: in progress / verified in code
 
 ## ICP intelligence
 

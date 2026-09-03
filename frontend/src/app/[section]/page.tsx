@@ -9,6 +9,8 @@ import { ProcessingWorkspace } from "@/components/processing-workspace";
 import { EvidenceWorkspace } from "@/components/evidence-workspace";
 import { ExportsWorkspace } from "@/components/exports-workspace";
 import { ReviewWorkspace } from "@/components/review-workspace";
+import { SettingsWorkspace } from "@/components/settings-workspace";
+import { TeamWorkspace } from "@/components/team-workspace";
 
 const sections = { leads: "Leads", "add-leads": "Add leads", imports: "Imports", evidence: "Evidence", icp: "ICP & Personas", processing: "Processing", review: "Review", exports: "Exports", team: "Team", settings: "Settings" } as const;
 type SectionKey = keyof typeof sections;
@@ -26,5 +28,7 @@ export default async function SectionPage({ params }: SectionPageProps) {
   if (section === "review") return <DashboardShell activePath="/review"><ReviewWorkspace /></DashboardShell>;
   if (section === "evidence") return <DashboardShell activePath="/evidence"><EvidenceWorkspace /></DashboardShell>;
   if (section === "exports") return <DashboardShell activePath="/exports"><ExportsWorkspace /></DashboardShell>;
+  if (section === "team") return <DashboardShell activePath="/team"><TeamWorkspace /></DashboardShell>;
+  if (section === "settings") return <DashboardShell activePath="/settings"><SettingsWorkspace /></DashboardShell>;
   return <DashboardShell activePath={`/${section}`}><section className="flex min-h-[28rem] items-center justify-center rounded-3xl border border-slate-200 bg-white p-6 text-center shadow-sm"><div><h1 className="text-3xl font-bold">Ready for its approved implementation phase.</h1></div></section></DashboardShell>;
 }
