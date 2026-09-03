@@ -21,6 +21,7 @@ async def test_health_check_returns_healthy_status() -> None:
     assert payload["status"] == "healthy"
     assert payload["environment"] == "development"
     assert set(payload["integrations_configured"]) == {
+        "outbound",
         "vibe",
         "bedrock",
         "gmail",

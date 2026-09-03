@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     aws_bearer_token_bedrock: str | None = None
     aws_region: str = "us-east-1"
     bedrock_model_id: str | None = None
+    outbound_email_provider: str = "mock"
+    outbound_reply_provider: str = "mock"
+    outbound_crm_provider: str = "mock"
     gmail_client_id: str | None = None
     gmail_client_secret: str | None = None
     gmail_refresh_token: str | None = None
@@ -71,6 +74,11 @@ class Settings(BaseSettings):
         return {
             "vibe": bool(self.vibe_api_key and self.vibe_enrichment_enabled),
             "bedrock": bool(self.aws_bearer_token_bedrock and self.bedrock_model_id),
+            "outbound": bool(
+                self.outbound_email_provider
+                and self.outbound_reply_provider
+                and self.outbound_crm_provider
+            ),
             "gmail": bool(
                 self.gmail_client_id
                 and self.gmail_client_secret
