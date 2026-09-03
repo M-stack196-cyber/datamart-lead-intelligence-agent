@@ -1,7 +1,7 @@
 from functools import lru_cache
 from typing import Annotated
 
-from pydantic import BeforeValidator, model_validator
+from pydantic import BeforeValidator, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     vibe_api_base_url: str = "https://api.explorium.ai"
     vibe_enrichment_enabled: bool = False
     vibe_worker_name: str = "local-vibe-worker"
+    vibe_approved_job_limit: int = Field(default=1, ge=1, le=100)
     aws_bearer_token_bedrock: str | None = None
     aws_region: str = "us-east-1"
     bedrock_model_id: str | None = None
@@ -78,4 +79,3 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-

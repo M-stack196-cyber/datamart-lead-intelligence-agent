@@ -80,6 +80,7 @@ add missing variables without replacing existing secrets.
    - `20260902120000_phase8_vibe_processing.sql`
    - `20260902150000_phase9_sales_handoff.sql`
    - `20260903080154_correct_icp_geography_rule.sql`
+   - `20260903081001_complete_enrichment_intelligence_pipeline.sql`
 3. With the Supabase CLI installed and the project linked, preview with `supabase db push --dry-run`, apply with `supabase db push`, and confirm local/remote history with `supabase migration list`.
 4. Add the project URL and publishable/anon key to the frontend variables in the ignored `.env`.
 5. Add the URL, anon key, service-role key, and database URL to the backend variables.
@@ -115,13 +116,15 @@ The dashboard runs at `http://localhost:3000`. API health is available at
 - Accepted imports create queued `enrich` jobs. The worker claims one job at a time and stores only
   provider-returned lead fields and evidence links.
 - It does not scrape LinkedIn and it never sends outreach messages.
-- Add `VIBE_ENRICHMENT_URL` from your Vibe AgentSource account and set
+- Configure `VIBE_API_BASE_URL` for your Vibe AgentSource account and set
   `VIBE_ENRICHMENT_ENABLED=true` only after reviewing Vibe's sample and credit estimate.
+- Keep `VIBE_APPROVED_JOB_LIMIT=1` until an authorized reviewer approves a larger per-run credit limit.
 - Start with one job, then inspect Processing and Evidence before increasing the limit:
 
 ```bash
 npm run dev:worker
-# Optional after review: backend/.venv/bin/python -m app.workers.runner --limit 3
+# Optional only after setting VIBE_APPROVED_JOB_LIMIT=3:
+backend/.venv/bin/python -m app.workers.runner --limit 3
 ```
 
 ## Validate
