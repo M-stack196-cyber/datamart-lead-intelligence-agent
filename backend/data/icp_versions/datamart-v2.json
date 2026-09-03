@@ -1,0 +1,297 @@
+{
+  "id": "datamart-icp-v2",
+  "name": "Datamart Core ICP",
+  "version": 2,
+  "status": "active",
+  "source": "DATAMART INC - ICP & PERSONA PLAYBOOK, Version 1.0, March 2026; confirmed geography rule 2026-09-03",
+  "effective_date": "2026-09-03",
+  "approved_by": "Datamart leadership",
+  "target_countries": [
+    "United States",
+    "USA",
+    "United Arab Emirates",
+    "UAE"
+  ],
+  "target_industries": [
+    "SaaS",
+    "Software",
+    "HealthTech",
+    "Healthcare",
+    "FinTech",
+    "Financial Services",
+    "Real Estate Technology",
+    "PropTech",
+    "E-Commerce",
+    "DTC",
+    "Analytics",
+    "MarTech"
+  ],
+  "excluded_company_types": [
+    "Publicly traded",
+    "Government agency",
+    "Non-profit",
+    "Educational institution",
+    "Marketing agency",
+    "Development agency",
+    "Design agency"
+  ],
+  "excluded_business_models": [
+    "Marketplace",
+    "Crypto",
+    "Web3",
+    "NFT",
+    "Gambling"
+  ],
+  "revenue_min": 500000,
+  "revenue_max": 20000000,
+  "employee_min": 1,
+  "employee_max": 50,
+  "accepted_growth_stages": [
+    "Post-idea",
+    "MVP",
+    "Revenue",
+    "Funded",
+    "Seed",
+    "Series A",
+    "Series B",
+    "Post-PMF",
+    "Scaling",
+    "Established"
+  ],
+  "accepted_business_models": [
+    "SaaS",
+    "Service-based",
+    "Product company",
+    "Funded startup"
+  ],
+  "accepted_buying_behaviors": [
+    "Retainer-ready",
+    "Milestone-based",
+    "SOW",
+    "Managed services",
+    "Previously outsourced"
+  ],
+  "decision_maker_titles": [
+    "Founder",
+    "Co-Founder",
+    "CEO",
+    "Chief Executive Officer",
+    "CTO",
+    "Chief Technology Officer",
+    "VP Engineering",
+    "VP of Engineering",
+    "Head of Engineering",
+    "Engineering Manager",
+    "Director of Engineering",
+    "Owner",
+    "Managing Director",
+    "Practice Manager",
+    "Operations Director",
+    "IT Director",
+    "General Manager",
+    "Partner",
+    "Principal"
+  ],
+  "scoring_rules": [
+    {
+      "key": "revenue_fit",
+      "label": "Revenue fit",
+      "weight": 20,
+      "description": "$500K-$20M annual revenue."
+    },
+    {
+      "key": "employee_fit",
+      "label": "Company size",
+      "weight": 15,
+      "description": "1-50 employees."
+    },
+    {
+      "key": "industry_fit",
+      "label": "Priority industry",
+      "weight": 15,
+      "description": "Matches one of six priority verticals."
+    },
+    {
+      "key": "geography_fit",
+      "label": "Geographic fit",
+      "weight": 15,
+      "description": "Headquartered in the United States or UAE."
+    },
+    {
+      "key": "growth_fit",
+      "label": "Growth readiness",
+      "weight": 10,
+      "description": "Post-idea with MVP, revenue, or funding."
+    },
+    {
+      "key": "business_model_fit",
+      "label": "Business model",
+      "weight": 10,
+      "description": "SaaS, service, product, or funded startup."
+    },
+    {
+      "key": "decision_maker_fit",
+      "label": "Decision authority",
+      "weight": 10,
+      "description": "Founder, technical leader, or operations owner."
+    },
+    {
+      "key": "buying_readiness",
+      "label": "Buying readiness",
+      "weight": 5,
+      "description": "Retainer or milestone/SOW buying behavior."
+    }
+  ],
+  "hard_stops": [
+    {
+      "key": "revenue_below_minimum",
+      "label": "Insufficient budget",
+      "description": "Known annual revenue below $500K."
+    },
+    {
+      "key": "excluded_business_model",
+      "label": "Excluded model",
+      "description": "Marketplace, crypto, Web3, NFT, or gambling."
+    },
+    {
+      "key": "undefined_need",
+      "label": "No defined need",
+      "description": "Prospect is only exploring a future idea."
+    },
+    {
+      "key": "onsite_only",
+      "label": "Delivery mismatch",
+      "description": "Prospect rejects distributed delivery."
+    }
+  ],
+  "manual_review_rules": [
+    {
+      "key": "outside_geography",
+      "label": "Opportunistic geography",
+      "description": "Headquarters outside USA/UAE receives no geography points and requires manual review; it is not a hard disqualification."
+    }
+  ],
+  "personas": [
+    {
+      "key": "scaling_cto",
+      "name": "The Scaling CTO",
+      "titles": [
+        "CTO",
+        "Chief Technology Officer",
+        "VP Engineering",
+        "VP of Engineering",
+        "Head of Engineering",
+        "Co-Founder & CTO",
+        "Engineering Manager",
+        "Director of Engineering"
+      ],
+      "company_profile": "SaaS, FinTech, or HealthTech; 10-40 employees; $1M-$10M revenue; 3-8 person engineering team.",
+      "triggers": [
+        "Senior role open for 90+ days",
+        "Developer lost mid-sprint",
+        "Large-customer feature deadline"
+      ],
+      "resonates": [
+        "Technical assessments",
+        "Code review examples",
+        "Named senior talent and start date",
+        "Concrete SLA language"
+      ],
+      "repels": [
+        "Vague timelines",
+        "Full-service agency claims",
+        "Feature dumping",
+        "Meeting a PM before the engineer"
+      ]
+    },
+    {
+      "key": "nontechnical_founder",
+      "name": "The Non-Technical Founder",
+      "titles": [
+        "Founder",
+        "CEO",
+        "Co-Founder",
+        "Managing Director"
+      ],
+      "company_profile": "Pre- or early-revenue; 1-10 employees; Angel/Seed funded or bootstrapped from industry revenue.",
+      "triggers": [
+        "Funding received",
+        "Failed freelancer or agency engagement",
+        "No-code limitations",
+        "Investor or pilot deadline"
+      ],
+      "resonates": [
+        "Relevant MVP case studies",
+        "Clear v1 versus v2 scope",
+        "Plain-language product strategy",
+        "Budget transparency"
+      ],
+      "repels": [
+        "Technical posturing",
+        "Long proposals without clear price",
+        "Requests for technical specifications"
+      ]
+    },
+    {
+      "key": "operations_owner",
+      "name": "The Operations Owner",
+      "titles": [
+        "Owner",
+        "Managing Director",
+        "Practice Manager",
+        "Operations Director",
+        "IT Director",
+        "General Manager",
+        "Partner",
+        "Principal"
+      ],
+      "company_profile": "Established small business; 10-50 employees; $1M-$10M revenue; healthcare, real estate, finance, or e-commerce.",
+      "triggers": [
+        "Compliance warning",
+        "Key spreadsheet owner resigned",
+        "Client lost to a digital competitor",
+        "Staff turnover from manual processes"
+      ],
+      "resonates": [
+        "Plain-language ROI",
+        "Hours saved per week",
+        "Compliance outcomes",
+        "Ongoing maintenance"
+      ],
+      "repels": [
+        "Jargon",
+        "Unpredictable hourly billing",
+        "Being asked to manage developers"
+      ]
+    }
+  ],
+  "tiers": [
+    {
+      "key": "tier_1",
+      "name": "Tier 1",
+      "revenue_min": 1000000,
+      "revenue_max": 10000000,
+      "employees_min": 10,
+      "employees_max": 50,
+      "description": "Primary target: post-PMF, actively scaling, high retainer likelihood."
+    },
+    {
+      "key": "tier_2",
+      "name": "Tier 2",
+      "revenue_min": 500000,
+      "revenue_max": 3000000,
+      "employees_min": 1,
+      "employees_max": 15,
+      "description": "Secondary target: early scaling or recently funded."
+    },
+    {
+      "key": "tier_3",
+      "name": "Tier 3",
+      "revenue_min": 5000000,
+      "revenue_max": 20000000,
+      "employees_min": 20,
+      "employees_max": 50,
+      "description": "Opportunistic: larger, lean company with longer procurement."
+    }
+  ]
+}

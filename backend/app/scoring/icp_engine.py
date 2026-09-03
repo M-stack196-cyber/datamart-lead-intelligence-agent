@@ -45,6 +45,7 @@ class IcpScoringEngine:
 
     def score(self, lead: LeadProfile) -> ScoreResult:
         hard_stops = self._hard_stops(lead)
+        review_reasons = self._review_reasons(lead)
         evidence_urls = self._normalized_evidence_urls(lead.evidence_urls)
         checks: dict[str, tuple[object, Callable[[], bool], str, str]] = {
             "revenue_fit": (
@@ -125,7 +126,7 @@ class IcpScoringEngine:
                 )
             )
 
-        disposition = self._disposition(total, hard_stops)
+        disposition = self._disposition(total, hard_stops, review_reasons)
         return ScoreResult(
             company_name=lead.company_name,
             icp_id=self.definition.id,
@@ -135,6 +136,7 @@ class IcpScoringEngine:
             tier=self._tier(lead),
             persona=self._persona(lead.title),
             hard_stops=hard_stops,
+            review_reasons=review_reasons,
             evaluations=evaluations,
             evidence_urls=evidence_urls,
         )
@@ -145,18 +147,27 @@ class IcpScoringEngine:
             stops.append("Annual revenue is below $500K.")
         if _contains(lead.business_model, self.definition.excluded_business_models):
             stops.append("Business model is explicitly excluded.")
-        if lead.country is not None and not _contains(lead.country, self.definition.target_countries):
-            stops.append("Headquarters is outside the United States or UAE.")
         if lead.has_defined_software_need is False:
             stops.append("No defined software need exists.")
         if lead.accepts_distributed_delivery is False:
             stops.append("Prospect requires an on-site delivery model.")
         return stops
 
+    def _review_reasons(self, lead: LeadProfile) -> list[str]:
+        if lead.country is not None and not _contains(
+            lead.country, self.definition.target_countries
+        ):
+            return [
+                "Headquarters is outside the USA/UAE focus; treat as opportunistic and review manually."
+            ]
+        return []
+
     @staticmethod
-    def _disposition(score: int, hard_stops: list[str]) -> str:
+    def _disposition(score: int, hard_stops: list[str], review_reasons: list[str]) -> str:
         if hard_stops:
             return "Disqualified"
+        if review_reasons:
+            return "Opportunistic / Manual Review"
         if score >= 80:
             return "Strong Fit"
         if score >= 65:

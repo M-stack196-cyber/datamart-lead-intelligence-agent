@@ -35,9 +35,12 @@ const personas = [
 const hardStops = [
   "Revenue below $500K",
   "Crypto, Web3, NFT, gambling or marketplace model",
-  "Headquarters outside US/UAE",
   "No defined software need",
   "Requires 100% on-site delivery",
+] as const;
+
+const manualReviewRules = [
+  "Outside USA/UAE: opportunistic / manual review, never an automatic disqualification; admins may pursue valuable opportunities, especially likely engagements above $10K",
 ] as const;
 
 export function IcpManager() {
@@ -121,7 +124,7 @@ export function IcpManager() {
         {[
           ["100", "Total scoring weight"],
           ["3", "Operational personas"],
-          ["5", "Hard-stop rules"],
+          ["4", "Hard-stop rules"],
         ].map(([value, label]) => (
           <article key={label} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <p className="text-3xl font-black text-slate-950">{value}</p>
@@ -159,6 +162,10 @@ export function IcpManager() {
               <h2 className="mb-4 text-lg font-bold text-slate-950">Immediate disqualifiers</h2>
               <div className="space-y-3">
                 {hardStops.map((rule) => <div key={rule} className="rounded-xl border border-red-100 bg-red-50 p-3 text-sm font-semibold text-red-800">{rule}</div>)}
+              </div>
+              <h2 className="mb-3 mt-5 text-lg font-bold text-slate-950">Manual review</h2>
+              <div className="space-y-3">
+                {manualReviewRules.map((rule) => <div key={rule} className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900">{rule}</div>)}
               </div>
               <div className="mt-5 rounded-2xl bg-slate-100 p-4 text-xs leading-5 text-slate-600">
                 Unknown facts receive zero points and remain visible as missing evidence. The agent never invents a match.

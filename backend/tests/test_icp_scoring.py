@@ -32,7 +32,7 @@ def test_strong_fit_lead_is_scored_against_active_version() -> None:
     assert result.disposition == "Strong Fit"
     assert result.tier == "Tier 1"
     assert result.persona == "The Scaling CTO"
-    assert result.icp_version == 1
+    assert result.icp_version == 2
     assert result.evidence_urls == ["https://example.com/jobs/senior-python"]
 
 
@@ -53,6 +53,46 @@ def test_hard_stop_overrides_other_positive_signals() -> None:
 
     assert result.disposition == "Disqualified"
     assert "Business model is explicitly excluded." in result.hard_stops
+
+
+def test_outside_usa_uae_is_opportunistic_not_disqualified() -> None:
+    result = IcpScoringEngine(icp_repository.get_active()).score(
+        LeadProfile(
+            company_name="Pakistan Product Co",
+            annual_revenue=3_000_000,
+            employee_count=30,
+            country="Pakistan",
+            industry="B2B SaaS",
+            business_model="SaaS",
+            growth_stage="Post-PMF scaling",
+            buying_behavior="Retainer-ready with a defined SOW",
+            title="CTO",
+            has_defined_software_need=True,
+            accepts_distributed_delivery=True,
+        )
+    )
+
+    assert result.score == 85
+    assert result.disposition == "Opportunistic / Manual Review"
+    assert result.hard_stops == []
+    assert result.review_reasons == [
+        "Headquarters is outside the USA/UAE focus; treat as opportunistic and review manually."
+    ]
+
+
+def test_outside_geography_does_not_override_a_genuine_hard_stop() -> None:
+    result = IcpScoringEngine(icp_repository.get_active()).score(
+        LeadProfile(
+            company_name="Excluded Pakistan Co",
+            annual_revenue=3_000_000,
+            country="Pakistan",
+            business_model="Web3",
+        )
+    )
+
+    assert result.disposition == "Disqualified"
+    assert result.hard_stops == ["Business model is explicitly excluded."]
+    assert result.review_reasons
 
 
 def test_missing_evidence_is_unknown_instead_of_invented() -> None:
@@ -108,9 +148,9 @@ def test_icp_draft_publish_preserves_history(tmp_path) -> None:
         {"name": "Datamart Core ICP - Updated", "employee_max": 75}
     )
 
-    assert draft.version == 2
+    assert draft.version == 3
     assert draft.status == "draft"
-    assert repository.get_active().version == 1
+    assert repository.get_active().version == 2
 
     published = repository.publish(draft.id, approved_by="Admin User")
     versions = repository.list_versions()

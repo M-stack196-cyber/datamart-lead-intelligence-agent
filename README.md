@@ -79,6 +79,7 @@ add missing variables without replacing existing secrets.
    - `20260901140500_phase7_leads_privilege_lockdown.sql`
    - `20260902120000_phase8_vibe_processing.sql`
    - `20260902150000_phase9_sales_handoff.sql`
+   - `20260903080154_correct_icp_geography_rule.sql`
 3. With the Supabase CLI installed and the project linked, preview with `supabase db push --dry-run`, apply with `supabase db push`, and confirm local/remote history with `supabase migration list`.
 4. Add the project URL and publishable/anon key to the frontend variables in the ignored `.env`.
 5. Add the URL, anon key, service-role key, and database URL to the backend variables.

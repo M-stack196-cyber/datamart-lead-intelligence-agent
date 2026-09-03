@@ -27,6 +27,14 @@ class HardStopRule(BaseModel):
     description: str
 
 
+class ManualReviewRule(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    key: str
+    label: str
+    description: str
+
+
 class PersonaDefinition(BaseModel):
     model_config = ConfigDict(frozen=True)
 
@@ -75,6 +83,7 @@ class IcpDefinition(BaseModel):
     decision_maker_titles: list[str]
     scoring_rules: list[ScoringRule]
     hard_stops: list[HardStopRule]
+    manual_review_rules: list[ManualReviewRule] = Field(default_factory=list)
     personas: list[PersonaDefinition]
     tiers: list[TierDefinition]
 
@@ -119,9 +128,17 @@ class ScoreResult(BaseModel):
     icp_id: str
     icp_version: int
     score: int
-    disposition: Literal["Strong Fit", "Good Fit", "Review", "Not Qualified", "Disqualified"]
+    disposition: Literal[
+        "Strong Fit",
+        "Good Fit",
+        "Review",
+        "Opportunistic / Manual Review",
+        "Not Qualified",
+        "Disqualified",
+    ]
     tier: Literal["Tier 1", "Tier 2", "Tier 3", "Unassigned"]
     persona: str | None
     hard_stops: list[str]
+    review_reasons: list[str]
     evaluations: list[RuleEvaluation]
     evidence_urls: list[str]
