@@ -68,9 +68,10 @@ def test_missing_evidence_is_unknown_instead_of_invented() -> None:
 
 @pytest.mark.anyio
 async def test_icp_api_lists_version_and_scores_lead() -> None:
-    app.dependency_overrides[require_user] = lambda: CurrentUser(
-        id="test-user", email="sales@datamart.test", role="sales"
-    )
+    async def override_user() -> CurrentUser:
+        return CurrentUser(id="test-user", email="sales@datamart.test", role="sales")
+
+    app.dependency_overrides[require_user] = override_user
     try:
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"

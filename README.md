@@ -4,11 +4,11 @@ An evidence-backed lead research and qualification workspace for Datamart. The a
 uses Vibe Prospecting for B2B data, deterministic rules for ICP qualification, AWS Bedrock for
 evidence-grounded analysis, and Supabase for PostgreSQL and authentication.
 
-This checkpoint contains the verified lead intelligence workflow through Phase 9. It includes versioned
-ICP scoring, validated lead intake, Vibe enrichment boundaries, live capture and intent scoring,
-decision fusion, review/approval flows, and the sales handoff/export gate. Sensitive runtime
-configuration remains backend-only, and future sections such as team settings remain honest placeholders
-until explicitly approved.
+This checkpoint contains the verified repository history through its Phase 9 checkpoint. It includes
+versioned ICP scoring, validated lead intake, Vibe enrichment boundaries, live capture and intent
+scoring, decision fusion, a basic review/approval flow, the sales handoff/export gate, and implemented
+team/settings screens. Sensitive runtime configuration remains backend-only. The end-to-end persisted
+intelligence, outreach, and email workflows described in later delivery phases are not complete yet.
 
 ## Known phase status
 
@@ -19,9 +19,9 @@ until explicitly approved.
 5. Phase 4 — live capture and queueing: complete
 6. Phase 5 — intent scoring and evidence-based ranking: complete
 7. Phase 6 — decision fusion and review readiness: complete
-8. Phase 7 — approval review and outreach review: complete
-9. Phase 8 — sales handoff and export controls: complete
-10. Phase 9 — production hardening and deployment readiness: in progress / verified in code
+8. Phase 7 — approval review and outreach service boundaries: verified in code; full draft lifecycle is not implemented
+9. Phase 8 — controlled Vibe worker and lead-management UI: verified in code; persisted scoring/intent pipeline is not complete
+10. Phase 9 — sales handoff migration, settings, and audit UI: included and verified in code; deployment application is still required
 
 ## ICP intelligence
 
@@ -67,14 +67,27 @@ backend/.venv/bin/python -m pip install -r backend/requirements.txt
 Keep real credentials in the ignored repository-root `.env`. Compare it with `.env.example` and
 add missing variables without replacing existing secrets.
 
-## Phase 5 Supabase setup
+## Supabase migration setup
 
 1. Create or select the Datamart Supabase project.
-2. Apply `supabase/migrations/20260901120000_phase5_core_schema.sql` through the Supabase migration workflow.
-3. Add the project URL and publishable/anon key to the frontend variables in the ignored `.env`.
-4. Add the URL, anon key, service-role key, and database URL to the backend variables.
-5. Run `npm run seed:icp` once to idempotently seed the approved active ICP.
-6. Create the first Auth user, then bootstrap its `profiles.role` to `admin` from the SQL editor. Later role changes must use the `set_user_role` RPC.
+2. Apply every file in `supabase/migrations/` in timestamp order:
+   - `20260901120000_phase5_core_schema.sql`
+   - `20260901123500_phase5_security_hardening.sql`
+   - `20260901124000_phase5_function_grants.sql`
+   - `20260901133000_phase6_lead_intake.sql`
+   - `20260901140000_phase7_lead_management.sql`
+   - `20260901140500_phase7_leads_privilege_lockdown.sql`
+   - `20260902120000_phase8_vibe_processing.sql`
+   - `20260902150000_phase9_sales_handoff.sql`
+3. With the Supabase CLI installed and the project linked, preview with `supabase db push --dry-run`, apply with `supabase db push`, and confirm local/remote history with `supabase migration list`.
+4. Add the project URL and publishable/anon key to the frontend variables in the ignored `.env`.
+5. Add the URL, anon key, service-role key, and database URL to the backend variables.
+6. Run `npm run seed:icp` once to idempotently seed the approved active ICP.
+7. Create the first Auth user, then bootstrap its `profiles.role` to `admin` from the SQL editor. Later role changes must use the `set_user_role` RPC.
+
+The Phase 9 sales-handoff migration is committed in this repository; its presence does not prove it has
+been applied to a particular Supabase project. Check migration history before relying on
+`sales_approved_at`, `approve_lead_for_sales`, or the replacement `assign_lead` function.
 
 Never place the service-role key or database URL in a `NEXT_PUBLIC_` variable. The migration enables RLS
 for every business table and restricts ICP publishing and role changes to admins.

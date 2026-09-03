@@ -7,9 +7,10 @@ from app.main import app
 
 @pytest.mark.anyio
 async def test_decision_route_combines_icp_and_intent_into_approval_status() -> None:
-    app.dependency_overrides[require_user] = lambda: CurrentUser(
-        id="test-user", email="sales@datamart.test", role="sales"
-    )
+    async def override_user() -> CurrentUser:
+        return CurrentUser(id="test-user", email="sales@datamart.test", role="sales")
+
+    app.dependency_overrides[require_user] = override_user
     try:
         async with AsyncClient(
             transport=ASGITransport(app=app), base_url="http://test"
