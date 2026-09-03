@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { OutreachDraftPanel, type OutreachDraft } from "@/components/outreach-draft-panel";
 
 type Role = "admin" | "manager" | "sales";
 type Evaluation = {
@@ -45,6 +46,7 @@ type Lead = {
   sales_approved_at: string | null;
   lead_scores: Score[];
   evidence: Evidence[];
+  outreach_drafts: OutreachDraft[];
 };
 
 const eligibleDispositions = new Set([
@@ -74,7 +76,7 @@ export function ReviewWorkspace() {
       supabase.from("profiles").select("role").eq("id", userData.user.id).single(),
       supabase
         .from("leads")
-        .select("id,person_name,company_name,title,email,country,industry,status,sales_approved_at,lead_scores(score,disposition,tier,persona,hard_stops,review_reasons,evaluations,intent_score,intent_level,intent_reasons,scored_at),evidence(id,title,source_url,publisher,excerpt,supports_fields)")
+        .select("id,person_name,company_name,title,email,country,industry,status,sales_approved_at,lead_scores(score,disposition,tier,persona,hard_stops,review_reasons,evaluations,intent_score,intent_level,intent_reasons,scored_at),evidence(id,title,source_url,publisher,excerpt,supports_fields),outreach_drafts(id,channel,subject,body,status,evidence_ids,created_by,reviewed_by,reviewed_at,review_notes,updated_at)")
         .order("updated_at", { ascending: false })
         .limit(100),
     ]);
@@ -251,6 +253,8 @@ export function ReviewWorkspace() {
                     <p className="mt-2 text-sm text-slate-500">No provider-returned evidence is stored for this lead.</p>
                   )}
                 </div>
+
+                <OutreachDraftPanel leadId={lead.id} role={role} drafts={lead.outreach_drafts} evidence={lead.evidence} onChanged={load} />
 
                 {role === "admin" && (
                   <div className="mt-6 border-t border-slate-200 pt-5">
