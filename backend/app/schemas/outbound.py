@@ -75,8 +75,11 @@ class OutreachSequence(BaseModel):
         step_numbers = [step.step_number for step in self.steps]
         if len(step_numbers) != len(set(step_numbers)):
             raise ValueError("sequence step numbers must be unique")
-        ordered_steps = sorted(self.steps, key=lambda step: step.step_number)
-        object.__setattr__(self, "steps", ordered_steps)
+        object.__setattr__(
+            self,
+            "steps",
+            sorted(self.steps, key=lambda step: step.step_number),
+        )
         return self
 
 
@@ -97,8 +100,13 @@ class LeadOutreach(BaseModel):
 
     @model_validator(mode="after")
     def validate_pause_state(self) -> "LeadOutreach":
-        if self.status == OutboundLifecycleStatus.PAUSED and not (self.paused_reason or "").strip():
-            raise ValueError("paused_reason is required when the outreach is paused")
+        if (
+            self.status == OutboundLifecycleStatus.PAUSED
+            and not (self.paused_reason or "").strip()
+        ):
+            raise ValueError(
+                "paused_reason is required when the outreach is paused"
+            )
         return self
 
 
@@ -121,6 +129,7 @@ class OutreachMessage(BaseModel):
     provider_response: dict[str, object] = Field(default_factory=dict)
     generated_at: str | None = None
     approved_at: str | None = None
+    approved_by: str | None = None
     scheduled_at: str | None = None
     sent_at: str | None = None
     replied_at: str | None = None
@@ -131,12 +140,41 @@ class OutreachMessage(BaseModel):
     def validate_lifecycle(self) -> "OutreachMessage":
         if not self.body.strip():
             raise ValueError("body is required")
-        if self.status in {OutboundLifecycleStatus.SCHEDULED, OutboundLifecycleStatus.SENT} and not (self.idempotency_key or "").strip():
-            raise ValueError("idempotency_key is required for scheduled or sent messages")
-        if self.status == OutboundLifecycleStatus.REPLIED and self.direction != OutboundDirection.INBOUND:
+
+        if (
+            self.status
+            in {
+                OutboundLifecycleStatus.SCHEDULED,
+                OutboundLifecycleStatus.SENT,
+            }
+            and not (self.idempotency_key or "").strip()
+        ):
+            raise ValueError(
+                "idempotency_key is required for scheduled or sent messages"
+            )
+
+        if (
+            self.status == OutboundLifecycleStatus.APPROVED
+            and not self.approved_at
+        ):
+            raise ValueError(
+                "approved_at is required for approved messages"
+            )
+
+        if (
+            self.status == OutboundLifecycleStatus.REPLIED
+            and self.direction != OutboundDirection.INBOUND
+        ):
             raise ValueError("replied messages must be inbound")
-        if self.status == OutboundLifecycleStatus.FAILED and not (self.error_message or "").strip():
-            raise ValueError("error_message is required for failed messages")
+
+        if (
+            self.status == OutboundLifecycleStatus.FAILED
+            and not (self.error_message or "").strip()
+        ):
+            raise ValueError(
+                "error_message is required for failed messages"
+            )
+
         return self
 
 
@@ -168,7 +206,11 @@ class SuppressionEntry(BaseModel):
 
     @model_validator(mode="after")
     def normalize_email(self) -> "SuppressionEntry":
-        object.__setattr__(self, "normalized_email", (self.email or "").strip().casefold())
+        object.__setattr__(
+            self,
+            "normalized_email",
+            (self.email or "").strip().casefold(),
+        )
         return self
 
 

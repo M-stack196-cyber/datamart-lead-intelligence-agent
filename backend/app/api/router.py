@@ -25,6 +25,10 @@ from app.services.outreach_generation import (
     regenerate_outreach,
     save_outreach_draft,
 )
+from app.services.outreach_delivery import (
+    approve_outreach_message,
+    send_outreach_message,
+)
 
 router = APIRouter()
 
@@ -382,6 +386,81 @@ async def regenerate_outreach_route(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail="Unable to regenerate outreach") from exc
+
+
+
+
+@router.post("/outreach/{lead_id}/approve", tags=["outreach"])
+async def approve_outreach(
+    lead_id: str,
+    user: CurrentUser = Depends(require_roles("admin")),
+) -> dict:
+    """Explicitly approve an unsent Phase B outreach draft before delivery."""
+    try:
+        return approve_outreach_message(
+            get_settings(),
+            user.id,
+            user.role,
+            lead_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to approve outreach message",
+        ) from exc
+
+
+@router.post("/outreach/{lead_id}/send", tags=["outreach"])
+async def send_outreach(
+    lead_id: str,
+    _request: SendEmailRequest,
+    user: CurrentUser = Depends(
+        require_roles("admin", "manager", "sales")
+    ),
+) -> dict:
+    """Send only an explicitly approved Phase B outreach message."""
+    try:
+        return send_outreach_message(
+            get_settings(),
+            user.id,
+            user.role,
+            lead_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to send outreach message",
+        ) from exc
 
 
 @router.post("/outreach/drafts/generate", tags=["outreach"])
