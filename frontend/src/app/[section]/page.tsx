@@ -9,10 +9,11 @@ import { ProcessingWorkspace } from "@/components/processing-workspace";
 import { EvidenceWorkspace } from "@/components/evidence-workspace";
 import { ExportsWorkspace } from "@/components/exports-workspace";
 import { ReviewWorkspace } from "@/components/review-workspace";
+import { OutreachWorkspace } from "@/components/outreach-workspace";
 import { SettingsWorkspace } from "@/components/settings-workspace";
 import { TeamWorkspace } from "@/components/team-workspace";
 
-const sections = { leads: "Leads", "add-leads": "Add leads", imports: "Imports", evidence: "Evidence", icp: "ICP & Personas", processing: "Processing", review: "Review", exports: "Exports", team: "Team", settings: "Settings" } as const;
+const sections = { leads: "Leads", "add-leads": "Add leads", imports: "Imports", evidence: "Evidence", icp: "ICP & Personas", processing: "Processing", review: "Review", outreach: "Outreach", exports: "Exports", team: "Team", settings: "Settings" } as const;
 type SectionKey = keyof typeof sections;
 type SectionPageProps = { params: Promise<{ section: string }> };
 const isSection = (value: string): value is SectionKey => value in sections;
@@ -26,6 +27,7 @@ export default async function SectionPage({ params }: SectionPageProps) {
   if (section === "imports") return <DashboardShell activePath="/imports"><ImportsWorkspace /></DashboardShell>;
   if (section === "processing") return <DashboardShell activePath="/processing"><ProcessingWorkspace /></DashboardShell>;
   if (section === "review") return <DashboardShell activePath="/review"><ReviewWorkspace /></DashboardShell>;
+  if (section === "outreach") return <DashboardShell activePath="/outreach"><OutreachWorkspace /></DashboardShell>;
   if (section === "evidence") return <DashboardShell activePath="/evidence"><EvidenceWorkspace /></DashboardShell>;
   if (section === "exports") return <DashboardShell activePath="/exports"><ExportsWorkspace /></DashboardShell>;
   if (section === "team") return <DashboardShell activePath="/team"><TeamWorkspace /></DashboardShell>;

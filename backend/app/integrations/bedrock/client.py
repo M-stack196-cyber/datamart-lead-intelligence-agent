@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -37,6 +38,14 @@ class BedrockClient:
     """AWS Bedrock adapter for evidence-grounded lead analysis and drafting."""
 
     SAFE_FIELDS = {"summary", "key_findings", "draft_message", "confidence", "risks"}
+    OUTREACH_FIELDS = {
+        "subject",
+        "body",
+        "personalization_summary",
+        "evidence_refs",
+        "grounding_warnings",
+        "evidence_coverage",
+    }
 
     def __init__(self, api_token: str, model_id: str, *, base_url: str = "https://bedrock-runtime.us-east-1.amazonaws.com") -> None:
         if not api_token or not model_id:
@@ -133,3 +142,95 @@ class BedrockClient:
             disposition=score.get("disposition") if isinstance(score, dict) else None,
             raw_response=raw,
         )
+
+    def generate_outreach_message(
+        self,
+        lead: dict[str, Any],
+        evidence: list[dict[str, Any]],
+        *,
+        icp_score: int | None = None,
+        icp_disposition: str | None = None,
+        matched_criteria: list[str] | None = None,
+        intent_score: int | None = None,
+        intent_level: str | None = None,
+        intent_signals: list[str] | None = None,
+    ) -> dict[str, Any]:
+        prompt = (
+            "You are a careful sales outreach writer. Draft a short, professional email using only facts supported by the evidence list. "
+            "Never invent company facts, hiring activity, funding, technology, growth, employee counts, revenue, initiatives, or pain points. "
+            "If the evidence is weak, use a more generic but professional message. "
+            "Return JSON with only: subject, body, personalization_summary, evidence_refs, grounding_warnings, evidence_coverage."
+        )
+        payload = {
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": 512,
+            "messages": [
+                {"role": "user", "content": [
+                    {"type": "text", "text": json.dumps({
+                        "lead": {
+                            "person_name": lead.get("person_name"),
+                            "company_name": lead.get("company_name"),
+                            "title": lead.get("title"),
+                            "industry": lead.get("industry"),
+                            "country": lead.get("country"),
+                            "email": lead.get("email"),
+                            "linkedin_url": lead.get("linkedin_url"),
+                            "company_url": lead.get("company_url"),
+                        },
+                        "icp": {"score": icp_score, "disposition": icp_disposition},
+                        "matched_criteria": matched_criteria or [],
+                        "intent": {"score": intent_score, "level": intent_level},
+                        "intent_signals": intent_signals or [],
+                        "evidence": evidence,
+                    })},
+                    {"type": "text", "text": prompt},
+                ]}
+            ],
+        }
+
+        response = httpx.post(
+            f"{self.base_url}/model/{self.model_id}/invoke",
+            headers={"Authorization": f"Bearer {self.api_token}", "Content-Type": "application/json"},
+            json=payload,
+            timeout=60,
+        )
+        response.raise_for_status()
+        raw = response.json()
+        text = self._extract_text(raw)
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ValueError("Bedrock returned invalid JSON") from exc
+
+        if not isinstance(parsed, dict):
+            raise ValueError("Bedrock returned a non-object JSON payload")
+
+        filtered = {key: value for key, value in parsed.items() if key in self.OUTREACH_FIELDS}
+        subject = str(filtered.get("subject") or "Quick question").strip() or "Quick question"
+        body = str(filtered.get("body") or "").strip()
+        if not body:
+            raise ValueError("Bedrock returned an empty outreach body")
+        personalization_summary = str(filtered.get("personalization_summary") or "").strip() or "Evidence-grounded outreach draft"
+        evidence_refs = filtered.get("evidence_refs")
+        if not isinstance(evidence_refs, list):
+            evidence_refs = [str(item.get("id")) for item in evidence if isinstance(item, dict) and item.get("id")]
+        evidence_refs = [str(item) for item in evidence_refs][:10]
+        grounding_warnings = filtered.get("grounding_warnings")
+        if not isinstance(grounding_warnings, list):
+            grounding_warnings = []
+        coverage = filtered.get("evidence_coverage")
+        if coverage not in {"full", "partial", "insufficient"}:
+            coverage = "partial" if evidence else "insufficient"
+
+        return {
+            "subject": subject,
+            "body": body,
+            "personalization_summary": personalization_summary,
+            "evidence_refs": evidence_refs,
+            "grounding_warnings": [str(item) for item in grounding_warnings],
+            "evidence_coverage": coverage,
+            "provider": "bedrock",
+            "model": self.model_id,
+            "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "raw_response": raw,
+        }

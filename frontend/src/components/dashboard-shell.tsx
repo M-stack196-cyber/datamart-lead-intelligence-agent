@@ -12,6 +12,7 @@ const navigation = [
   { label: "ICP & Personas", href: "/icp", marker: "C" },
   { label: "Processing", href: "/processing", marker: "P" },
   { label: "Review", href: "/review", marker: "R" },
+  { label: "Outreach", href: "/outreach", marker: "O" },
   { label: "Exports", href: "/exports", marker: "X" },
   { label: "Team", href: "/team", marker: "T" },
   { label: "Settings", href: "/settings", marker: "S" },

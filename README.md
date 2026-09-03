@@ -130,6 +130,16 @@ npm run dev:worker
 backend/.venv/bin/python -m app.workers.runner --limit 3
 ```
 
+## Phase B outreach preparation
+
+The `/outreach` workspace lists accessible sales-approved leads and uses the Phase A
+`lead_outreach`, `outreach_messages`, and `outreach_events` records for evidence-grounded email
+generation, retrieval, regeneration, and manual draft editing. Evidence references and grounding
+metadata are stored with each message. These actions never send email; the existing separately
+approved legacy draft/send flow remains the only Gmail delivery path. LinkedIn remains manual and
+copy-only through the legacy reviewed-draft flow. Apply
+`20260903110000_outbound_execution_foundation.sql` before enabling this workspace against Supabase.
+
 ## Validate
 
 ```bash

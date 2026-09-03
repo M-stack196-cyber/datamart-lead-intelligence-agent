@@ -46,3 +46,31 @@ def test_bedrock_client_generates_evidence_based_analysis() -> None:
     assert analysis.disposition == "Strong Fit"
     assert "annual_revenue" not in analysis.model_dump()
     assert post.call_count == 1
+
+
+def test_bedrock_client_generates_structured_grounded_outreach() -> None:
+    response = Mock()
+    response.raise_for_status.return_value = None
+    response.json.return_value = {"output": {"message": {"content": [{"text": (
+        '{"subject":"A relevant question","body":"Hi Aisha, would a brief conversation be useful?",'
+        '"evidence_refs":["evidence-1"],"grounding_warnings":[],"evidence_coverage":"full"}'
+    )}]}}}
+    lead = {"person_name": "Aisha", "company_name": "Datamart",
+            "company_url": "https://datamart.example"}
+    evidence = [{"id": "evidence-1", "title": "Company update",
+                 "source_url": "https://example.com/update"}]
+
+    with patch("app.integrations.bedrock.client.httpx.post", return_value=response) as post:
+        result = BedrockClient("token", "model-id").generate_outreach_message(
+            lead, evidence, icp_score=82, icp_disposition="Strong Fit",
+            matched_criteria=["Decision-maker"], intent_score=71, intent_level="high",
+            intent_signals=["Stored public update"],
+        )
+
+    sent = post.call_args.kwargs["json"]
+    prompt_context = sent["messages"][0]["content"][0]["text"]
+    assert '"score": 82' in prompt_context
+    assert '"company_url": "https://datamart.example"' in prompt_context
+    assert result["evidence_refs"] == ["evidence-1"]
+    assert result["evidence_coverage"] == "full"
+    assert result["provider"] == "bedrock"

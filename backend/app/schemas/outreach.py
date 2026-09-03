@@ -15,3 +15,12 @@ class ReviewOutreachRequest(BaseModel):
 
 class SendEmailRequest(BaseModel):
     confirm: Literal[True]
+
+
+class SaveOutreachDraftRequest(BaseModel):
+    subject: str | None = None
+    body: str
+
+
+class RegenerateOutreachRequest(BaseModel):
+    reason: str | None = None
