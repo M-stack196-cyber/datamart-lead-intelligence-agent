@@ -11,6 +11,7 @@ from app.schemas.intake import LeadIntakeBatch, LeadIntakeValidation
 from app.services.approval import ApprovalDecision, ApprovalEngine
 from app.schemas.outreach import (
     GenerateOutreachRequest,
+    IngestInboundReplyRequest,
     PauseSequenceRequest,
     ReviewOutreachRequest,
     RunDueFollowupsRequest,
@@ -18,6 +19,7 @@ from app.schemas.outreach import (
     SendEmailRequest,
 )
 from app.integrations.gmail import GmailClient, GmailDeliveryError
+from app.integrations.outbound import InboundReplyRequest
 from app.services.email_delivery import EmailDeliveryService
 from app.services.outreach import OutreachDraftEngine, validate_outreach_for_approval
 from app.services.outreach_generation import (
@@ -37,6 +39,10 @@ from app.services.sequence_execution import (
     resume_sequence,
     run_due_followups,
     schedule_next_followup,
+)
+from app.services.reply_ingestion import (
+    ingest_inbound_reply,
+    list_inbound_replies,
 )
 
 router = APIRouter()
@@ -484,6 +490,95 @@ async def send_outreach(
             detail="Unable to send outreach message",
         ) from exc
 
+
+
+@router.post("/outreach/{lead_id}/replies", tags=["outreach"])
+async def ingest_outreach_reply(
+    lead_id: str,
+    request: IngestInboundReplyRequest,
+    user: CurrentUser = Depends(
+        require_roles("admin", "manager", "sales")
+    ),
+) -> dict:
+    """Ingest and classify an inbound reply for an outreach sequence."""
+    try:
+        inbound = InboundReplyRequest(
+            provider_name=request.provider_name,
+            lead_id=lead_id,
+            lead_outreach_id=request.lead_outreach_id,
+            thread_id=request.thread_id,
+            provider_message_id=request.provider_message_id,
+            from_email=request.from_email,
+            to_email=request.to_email,
+            subject=request.subject,
+            body=request.body,
+            received_at=request.received_at,
+            metadata=request.metadata,
+        )
+
+        return ingest_inbound_reply(
+            get_settings(),
+            user.id,
+            user.role,
+            inbound,
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to ingest inbound reply",
+        ) from exc
+
+
+@router.get("/outreach/{lead_id}/replies", tags=["outreach"])
+async def outreach_replies(
+    lead_id: str,
+    user: CurrentUser = Depends(
+        require_roles("admin", "manager", "sales")
+    ),
+) -> list[dict]:
+    """Return inbound replies visible to the current user."""
+    try:
+        return list_inbound_replies(
+            get_settings(),
+            user.id,
+            user.role,
+            lead_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to load inbound replies",
+        ) from exc
 
 
 @router.get("/outreach/{lead_id}/sequence", tags=["outreach"])

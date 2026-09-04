@@ -29,6 +29,17 @@ class SuppressionKind(StrEnum):
     PERMANENT = "permanent"
 
 
+class ReplyClassification(StrEnum):
+    INTERESTED = "interested"
+    NOT_INTERESTED = "not_interested"
+    QUESTION = "question"
+    MEETING_REQUEST = "meeting_request"
+    OBJECTION = "objection"
+    UNSUBSCRIBE = "unsubscribe"
+    OUT_OF_OFFICE = "out_of_office"
+    UNKNOWN = "unknown"
+
+
 class CrmSyncStatus(StrEnum):
     PENDING = "pending"
     SYNCED = "synced"
@@ -240,12 +251,17 @@ class InboundReplyEvent(BaseModel):
     id: str
     lead_id: str
     lead_outreach_id: str
+    outreach_message_id: str | None = None
     provider_name: str
     thread_id: str | None = None
     provider_message_id: str | None = None
+    dedupe_key: str
     from_email: str
     to_email: str
     subject: str
     body: str
+    classification: ReplyClassification = ReplyClassification.UNKNOWN
+    classification_reason: str | None = None
+    is_unsubscribe: bool = False
     received_at: str
     metadata: dict[str, object] = Field(default_factory=dict)
