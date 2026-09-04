@@ -128,6 +128,34 @@ type CrmSyncState = {
 };
 
 
+type OutreachTimelineItem = {
+  id: string;
+  event_type: string;
+  label: string;
+  occurred_at: string | null;
+  payload: Record<string, unknown>;
+  source: string;
+};
+
+type OutreachAnalytics = {
+  lead_id: string;
+  timeline_count: number;
+  metrics: {
+    sent_count: number;
+    reply_count: number;
+    reply_rate: number;
+    interested_count: number;
+    meeting_request_count: number;
+    not_interested_count: number;
+    unsubscribe_count: number;
+    crm_synced_count: number;
+    crm_failed_count: number;
+    event_counts: Record<string, number>;
+    reply_classifications: Record<string, number>;
+  };
+};
+
+
 type Role = "admin" | "manager" | "sales";
 
 const apiUrl =
@@ -145,6 +173,8 @@ export function OutreachWorkspace() {
   const [sequence, setSequence] = useState<SequenceState | null>(null);
   const [replies, setReplies] = useState<InboundReply[]>([]);
   const [crmSync, setCrmSync] = useState<CrmSyncState[]>([]);
+  const [timeline, setTimeline] = useState<OutreachTimelineItem[]>([]);
+  const [analytics, setAnalytics] = useState<OutreachAnalytics | null>(null);
   const [role, setRole] = useState<Role | null>(null);
 
   const [subject, setSubject] = useState("");
@@ -306,6 +336,49 @@ export function OutreachWorkspace() {
     [request],
   );
 
+  const loadTimeline = useCallback(
+    async (leadId: string) => {
+      if (!leadId) {
+        setTimeline([]);
+        return;
+      }
+
+      try {
+        const payload =
+          (await request(
+            `/outreach/${leadId}/timeline`,
+          )) as OutreachTimelineItem[];
+
+        setTimeline(payload);
+      } catch {
+        setTimeline([]);
+      }
+    },
+    [request],
+  );
+
+  const loadAnalytics = useCallback(
+    async (leadId: string) => {
+      if (!leadId) {
+        setAnalytics(null);
+        return;
+      }
+
+      try {
+        const payload =
+          (await request(
+            `/outreach/${leadId}/analytics`,
+          )) as OutreachAnalytics;
+
+        setAnalytics(payload);
+      } catch {
+        setAnalytics(null);
+      }
+    },
+    [request],
+  );
+
+
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -331,12 +404,16 @@ export function OutreachWorkspace() {
           loadSequence(nextId),
           loadReplies(nextId),
           loadCrmSync(nextId),
+          loadTimeline(nextId),
+          loadAnalytics(nextId),
         ]);
       } else {
         setDetail(null);
         setSequence(null);
         setReplies([]);
         setCrmSync([]);
+        setTimeline([]);
+        setAnalytics(null);
       }
     } catch (cause) {
       setError(
@@ -352,6 +429,8 @@ export function OutreachWorkspace() {
     loadSequence,
     loadReplies,
     loadCrmSync,
+    loadTimeline,
+    loadAnalytics,
     request,
     selectedId,
   ]);
@@ -1761,6 +1840,205 @@ export function OutreachWorkspace() {
                   ))}
                 </div>
               )}
+            </article>
+
+            <article className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="font-bold text-slate-950">
+                    Outreach analytics
+                  </h2>
+
+                  <p className="mt-1 text-sm text-slate-500">
+                    Track delivery, replies, conversions, and CRM handoff activity.
+                  </p>
+                </div>
+
+                {analytics && (
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">
+                    {analytics.timeline_count} events
+                  </span>
+                )}
+              </div>
+
+              {analytics ? (
+                <>
+                  <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="rounded-2xl bg-slate-50 p-4">
+                      <p className="text-xs font-semibold uppercase text-slate-500">
+                        Sent
+                      </p>
+                      <p className="mt-2 text-2xl font-bold text-slate-950">
+                        {analytics.metrics.sent_count}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl bg-slate-50 p-4">
+                      <p className="text-xs font-semibold uppercase text-slate-500">
+                        Replies
+                      </p>
+                      <p className="mt-2 text-2xl font-bold text-slate-950">
+                        {analytics.metrics.reply_count}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl bg-slate-50 p-4">
+                      <p className="text-xs font-semibold uppercase text-slate-500">
+                        Reply rate
+                      </p>
+                      <p className="mt-2 text-2xl font-bold text-slate-950">
+                        {(
+                          analytics.metrics.reply_rate * 100
+                        ).toFixed(1)}
+                        %
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl bg-slate-50 p-4">
+                      <p className="text-xs font-semibold uppercase text-slate-500">
+                        CRM synced
+                      </p>
+                      <p className="mt-2 text-2xl font-bold text-slate-950">
+                        {analytics.metrics.crm_synced_count}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="rounded-2xl border border-slate-200 p-4">
+                      <p className="text-xs font-semibold uppercase text-slate-500">
+                        Interested
+                      </p>
+                      <p className="mt-2 text-xl font-bold text-slate-950">
+                        {analytics.metrics.interested_count}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 p-4">
+                      <p className="text-xs font-semibold uppercase text-slate-500">
+                        Meeting requests
+                      </p>
+                      <p className="mt-2 text-xl font-bold text-slate-950">
+                        {analytics.metrics.meeting_request_count}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 p-4">
+                      <p className="text-xs font-semibold uppercase text-slate-500">
+                        Not interested
+                      </p>
+                      <p className="mt-2 text-xl font-bold text-slate-950">
+                        {analytics.metrics.not_interested_count}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl border border-slate-200 p-4">
+                      <p className="text-xs font-semibold uppercase text-slate-500">
+                        Unsubscribes
+                      </p>
+                      <p className="mt-2 text-xl font-bold text-slate-950">
+                        {analytics.metrics.unsubscribe_count}
+                      </p>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <p className="mt-5 text-sm text-slate-500">
+                  Analytics are not available for this lead yet.
+                </p>
+              )}
+
+              <div className="mt-6 border-t border-slate-200 pt-5">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="font-bold text-slate-950">
+                    Activity timeline
+                  </h3>
+
+                  <span className="text-xs font-semibold text-slate-500">
+                    Newest first
+                  </span>
+                </div>
+
+                {timeline.length === 0 ? (
+                  <p className="mt-4 text-sm text-slate-500">
+                    No outreach activity has been recorded yet.
+                  </p>
+                ) : (
+                  <div className="mt-4 space-y-3">
+                    {timeline.map((item) => (
+                      <div
+                        key={`${item.source}-${item.id}-${item.event_type}`}
+                        className="rounded-2xl border border-slate-200 p-4"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="font-bold text-slate-950">
+                              {item.label}
+                            </p>
+
+                            <p className="mt-1 text-xs font-semibold uppercase text-slate-500">
+                              {item.source.replaceAll(
+                                "_",
+                                " ",
+                              )}
+                            </p>
+                          </div>
+
+                          <p className="text-xs text-slate-500">
+                            {item.occurred_at
+                              ? new Date(
+                                  item.occurred_at,
+                                ).toLocaleString()
+                              : "Time unavailable"}
+                          </p>
+                        </div>
+
+                        {Object.keys(
+                          item.payload || {},
+                        ).length > 0 && (
+                          <div className="mt-3 grid gap-2 text-sm text-slate-600">
+                            {Object.entries(
+                              item.payload,
+                            )
+                              .filter(
+                                ([, value]) =>
+                                  value !== null &&
+                                  value !== "" &&
+                                  value !== false,
+                              )
+                              .slice(0, 5)
+                              .map(
+                                ([key, value]) => (
+                                  <div
+                                    key={key}
+                                    className="flex flex-wrap gap-2"
+                                  >
+                                    <span className="font-semibold text-slate-700">
+                                      {key.replaceAll(
+                                        "_",
+                                        " ",
+                                      )}
+                                      :
+                                    </span>
+
+                                    <span className="break-all">
+                                      {typeof value ===
+                                      "object"
+                                        ? JSON.stringify(
+                                            value,
+                                          )
+                                        : String(value)}
+                                    </span>
+                                  </div>
+                                ),
+                              )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </article>
 
             <article className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">

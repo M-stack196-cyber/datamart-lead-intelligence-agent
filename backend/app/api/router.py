@@ -49,6 +49,10 @@ from app.services.crm_handoff import (
     get_crm_sync_state,
     push_lead_to_crm,
 )
+from app.services.outreach_analytics import (
+    get_lead_outreach_analytics,
+    get_lead_outreach_timeline,
+)
 
 router = APIRouter()
 
@@ -583,6 +587,80 @@ async def outreach_replies(
         raise HTTPException(
             status_code=502,
             detail="Unable to load inbound replies",
+        ) from exc
+
+
+@router.get("/outreach/{lead_id}/timeline", tags=["outreach"])
+async def outreach_timeline(
+    lead_id: str,
+    user: CurrentUser = Depends(
+        require_roles("admin", "manager", "sales")
+    ),
+) -> list[dict]:
+    """Return chronological outreach activity for a lead."""
+    try:
+        return get_lead_outreach_timeline(
+            get_settings(),
+            user.id,
+            user.role,
+            lead_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to load outreach timeline",
+        ) from exc
+
+
+@router.get("/outreach/{lead_id}/analytics", tags=["outreach"])
+async def outreach_analytics(
+    lead_id: str,
+    user: CurrentUser = Depends(
+        require_roles("admin", "manager", "sales")
+    ),
+) -> dict:
+    """Return outreach analytics summary for a lead."""
+    try:
+        return get_lead_outreach_analytics(
+            get_settings(),
+            user.id,
+            user.role,
+            lead_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to load outreach analytics",
         ) from exc
 
 
