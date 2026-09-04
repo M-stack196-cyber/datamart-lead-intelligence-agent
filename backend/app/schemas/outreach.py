@@ -46,3 +46,8 @@ class IngestInboundReplyRequest(BaseModel):
     body: str = Field(min_length=1)
     received_at: datetime
     metadata: dict[str, object] = Field(default_factory=dict)
+
+class CrmSyncRequest(BaseModel):
+    provider_key: str = Field(min_length=1, max_length=100)
+    mapping: dict[str, object] = Field(default_factory=dict)
+

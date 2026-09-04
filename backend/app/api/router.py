@@ -10,6 +10,7 @@ from app.scoring.icp_engine import IcpScoringEngine
 from app.schemas.intake import LeadIntakeBatch, LeadIntakeValidation
 from app.services.approval import ApprovalDecision, ApprovalEngine
 from app.schemas.outreach import (
+    CrmSyncRequest,
     GenerateOutreachRequest,
     IngestInboundReplyRequest,
     PauseSequenceRequest,
@@ -43,6 +44,10 @@ from app.services.sequence_execution import (
 from app.services.reply_ingestion import (
     ingest_inbound_reply,
     list_inbound_replies,
+)
+from app.services.crm_handoff import (
+    get_crm_sync_state,
+    push_lead_to_crm,
 )
 
 router = APIRouter()
@@ -578,6 +583,85 @@ async def outreach_replies(
         raise HTTPException(
             status_code=502,
             detail="Unable to load inbound replies",
+        ) from exc
+
+
+@router.post("/outreach/{lead_id}/crm-sync", tags=["outreach"])
+async def sync_outreach_lead_to_crm(
+    lead_id: str,
+    request: CrmSyncRequest,
+    user: CurrentUser = Depends(
+        require_roles("admin", "manager")
+    ),
+) -> dict:
+    """Push a lead to the configured CRM provider."""
+    try:
+        return push_lead_to_crm(
+            get_settings(),
+            user.id,
+            user.role,
+            lead_id,
+            request.provider_key,
+            request.mapping,
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to sync lead to CRM",
+        ) from exc
+
+
+@router.get("/outreach/{lead_id}/crm-sync", tags=["outreach"])
+async def outreach_crm_sync_state(
+    lead_id: str,
+    provider_key: str | None = None,
+    user: CurrentUser = Depends(
+        require_roles("admin", "manager", "sales")
+    ),
+) -> list[dict]:
+    """Return CRM synchronization state for a lead."""
+    try:
+        return get_crm_sync_state(
+            get_settings(),
+            user.id,
+            user.role,
+            lead_id,
+            provider_key=provider_key,
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to load CRM sync state",
         ) from exc
 
 

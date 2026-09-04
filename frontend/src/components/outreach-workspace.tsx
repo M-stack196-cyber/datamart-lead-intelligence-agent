@@ -110,6 +110,24 @@ type InboundReply = {
 };
 
 
+type CrmSyncState = {
+  id: string;
+  lead_id: string;
+  lead_outreach_id: string | null;
+  provider_key: string;
+  external_crm_id: string | null;
+  sync_status: string;
+  mapping: Record<string, unknown>;
+  error_message: string | null;
+  synced_at: string | null;
+  next_sync_at: string | null;
+  created_by: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  idempotent?: boolean;
+};
+
+
 type Role = "admin" | "manager" | "sales";
 
 const apiUrl =
@@ -126,6 +144,7 @@ export function OutreachWorkspace() {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [sequence, setSequence] = useState<SequenceState | null>(null);
   const [replies, setReplies] = useState<InboundReply[]>([]);
+  const [crmSync, setCrmSync] = useState<CrmSyncState[]>([]);
   const [role, setRole] = useState<Role | null>(null);
 
   const [subject, setSubject] = useState("");
@@ -265,6 +284,28 @@ export function OutreachWorkspace() {
     [request],
   );
 
+
+  const loadCrmSync = useCallback(
+    async (leadId: string) => {
+      if (!leadId) {
+        setCrmSync([]);
+        return;
+      }
+
+      try {
+        const payload =
+          (await request(
+            `/outreach/${leadId}/crm-sync`,
+          )) as CrmSyncState[];
+
+        setCrmSync(payload);
+      } catch {
+        setCrmSync([]);
+      }
+    },
+    [request],
+  );
+
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -289,11 +330,13 @@ export function OutreachWorkspace() {
           loadDetail(nextId),
           loadSequence(nextId),
           loadReplies(nextId),
+          loadCrmSync(nextId),
         ]);
       } else {
         setDetail(null);
         setSequence(null);
         setReplies([]);
+        setCrmSync([]);
       }
     } catch (cause) {
       setError(
@@ -308,6 +351,7 @@ export function OutreachWorkspace() {
     loadDetail,
     loadSequence,
     loadReplies,
+    loadCrmSync,
     request,
     selectedId,
   ]);
@@ -361,6 +405,7 @@ export function OutreachWorkspace() {
         loadDetail(leadId),
         loadSequence(leadId),
         loadReplies(leadId),
+        loadCrmSync(leadId),
       ]);
     } catch (cause) {
       setError(
@@ -448,6 +493,71 @@ export function OutreachWorkspace() {
       setBusy("");
     }
   }
+
+  async function pushToCrm() {
+    if (!selectedId) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Push this lead to the CRM?"
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setBusy("crm-sync");
+    setError("");
+    setNotice("");
+
+    try {
+      const result =
+        (await request(
+          `/outreach/${selectedId}/crm-sync`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              provider_key: "mock",
+              mapping: {
+                source: "datamart",
+                lead_id: selectedId,
+              },
+            }),
+          },
+        )) as CrmSyncState;
+
+      if (result.sync_status === "synced") {
+        setNotice(
+          result.idempotent
+            ? "Lead is already synced to CRM."
+            : "Lead synced to CRM successfully."
+        );
+      } else if (
+        result.sync_status === "failed"
+      ) {
+        setError(
+          result.error_message ||
+            "CRM sync failed."
+        );
+      } else {
+        setNotice(
+          `CRM sync status: ${result.sync_status}`
+        );
+      }
+
+      await loadCrmSync(selectedId);
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Unable to sync lead to CRM",
+      );
+    } finally {
+      setBusy("");
+    }
+  }
+
 
   async function approve() {
     if (!selectedId) {
@@ -1650,6 +1760,155 @@ export function OutreachWorkspace() {
                     </div>
                   ))}
                 </div>
+              )}
+            </article>
+
+            <article className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="font-bold text-slate-950">
+                    CRM handoff
+                  </h2>
+
+                  <p className="mt-1 text-sm text-slate-500">
+                    Review CRM synchronization status for this lead.
+                  </p>
+                </div>
+
+                {(role === "admin" || role === "manager") && (
+                  <button
+                    type="button"
+                    onClick={() => void pushToCrm()}
+                    disabled={
+                      busy === "crm-sync" ||
+                      !selectedId
+                    }
+                    className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {busy === "crm-sync"
+                      ? "Syncing..."
+                      : "Push to CRM"}
+                  </button>
+                )}
+              </div>
+
+              {crmSync.length === 0 ? (
+                <p className="mt-5 text-sm text-slate-500">
+                  This lead has not been synced to a CRM yet.
+                </p>
+              ) : (
+                <div className="mt-5 space-y-4">
+                  {crmSync.map((item) => (
+                    <div
+                      key={item.id}
+                      className="rounded-2xl border border-slate-200 p-5"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase text-slate-500">
+                            Provider
+                          </p>
+
+                          <p className="mt-1 font-bold text-slate-950">
+                            {item.provider_key}
+                          </p>
+                        </div>
+
+                        <span
+                          className={
+                            "rounded-full px-3 py-1 text-xs font-bold uppercase " +
+                            (item.sync_status === "synced"
+                              ? "bg-emerald-50 text-emerald-700"
+                              : item.sync_status === "failed"
+                                ? "bg-red-50 text-red-700"
+                                : item.sync_status === "pending"
+                                  ? "bg-amber-50 text-amber-700"
+                                  : "bg-slate-100 text-slate-700")
+                          }
+                        >
+                          {item.sync_status}
+                        </span>
+                      </div>
+
+                      {item.external_crm_id && (
+                        <div className="mt-4">
+                          <p className="text-xs font-semibold uppercase text-slate-500">
+                            External CRM ID
+                          </p>
+
+                          <p className="mt-1 break-all text-sm font-semibold text-slate-900">
+                            {item.external_crm_id}
+                          </p>
+                        </div>
+                      )}
+
+                      {item.error_message && (
+                        <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3">
+                          <p className="text-sm font-bold text-red-900">
+                            CRM sync failed
+                          </p>
+
+                          <p className="mt-1 text-sm text-red-800">
+                            {item.error_message}
+                          </p>
+                        </div>
+                      )}
+
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        <div>
+                          <p className="text-xs font-semibold uppercase text-slate-500">
+                            Last synced
+                          </p>
+
+                          <p className="mt-1 text-sm text-slate-700">
+                            {item.synced_at
+                              ? new Date(
+                                  item.synced_at,
+                                ).toLocaleString()
+                              : "Not synced yet"}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-xs font-semibold uppercase text-slate-500">
+                            Next retry
+                          </p>
+
+                          <p className="mt-1 text-sm text-slate-700">
+                            {item.sync_status === "failed" &&
+                            item.next_sync_at
+                              ? new Date(
+                                  item.next_sync_at,
+                                ).toLocaleString()
+                              : "—"}
+                          </p>
+                        </div>
+                      </div>
+
+                      {Object.keys(item.mapping || {}).length > 0 && (
+                        <div className="mt-4">
+                          <p className="text-xs font-semibold uppercase text-slate-500">
+                            Mapping
+                          </p>
+
+                          <pre className="mt-2 overflow-x-auto rounded-xl bg-slate-50 p-3 text-xs text-slate-700">
+                            {JSON.stringify(
+                              item.mapping,
+                              null,
+                              2,
+                            )}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {role === "sales" && (
+                <p className="mt-4 text-xs text-slate-500">
+                  CRM synchronization is read-only for sales users.
+                </p>
               )}
             </article>
 
