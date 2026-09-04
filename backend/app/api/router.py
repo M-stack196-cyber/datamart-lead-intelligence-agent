@@ -11,7 +11,9 @@ from app.schemas.intake import LeadIntakeBatch, LeadIntakeValidation
 from app.services.approval import ApprovalDecision, ApprovalEngine
 from app.schemas.outreach import (
     GenerateOutreachRequest,
+    PauseSequenceRequest,
     ReviewOutreachRequest,
+    RunDueFollowupsRequest,
     SaveOutreachDraftRequest,
     SendEmailRequest,
 )
@@ -28,6 +30,13 @@ from app.services.outreach_generation import (
 from app.services.outreach_delivery import (
     approve_outreach_message,
     send_outreach_message,
+)
+from app.services.sequence_execution import (
+    get_sequence_state,
+    pause_sequence,
+    resume_sequence,
+    run_due_followups,
+    schedule_next_followup,
 )
 
 router = APIRouter()
@@ -435,12 +444,25 @@ async def send_outreach(
 ) -> dict:
     """Send only an explicitly approved Phase B outreach message."""
     try:
-        return send_outreach_message(
-            get_settings(),
+        settings = get_settings()
+
+        result = send_outreach_message(
+            settings,
             user.id,
             user.role,
             lead_id,
         )
+
+        if result.get("status") == "sent":
+            sequence = schedule_next_followup(
+                settings,
+                user.id,
+                user.role,
+                lead_id,
+            )
+            result["sequence"] = sequence
+
+        return result
     except PermissionError as exc:
         raise HTTPException(
             status_code=403,
@@ -460,6 +482,157 @@ async def send_outreach(
         raise HTTPException(
             status_code=502,
             detail="Unable to send outreach message",
+        ) from exc
+
+
+
+@router.get("/outreach/{lead_id}/sequence", tags=["outreach"])
+async def outreach_sequence_state(
+    lead_id: str,
+    user: CurrentUser = Depends(
+        require_roles("admin", "manager", "sales")
+    ),
+) -> dict:
+    """Return the current sequence state and follow-up history for a lead."""
+    try:
+        return get_sequence_state(
+            get_settings(),
+            user.id,
+            user.role,
+            lead_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to load outreach sequence",
+        ) from exc
+
+
+@router.post("/outreach/{lead_id}/sequence/pause", tags=["outreach"])
+async def pause_outreach_sequence(
+    lead_id: str,
+    request: PauseSequenceRequest,
+    user: CurrentUser = Depends(
+        require_roles("admin", "manager")
+    ),
+) -> dict:
+    """Pause future automated follow-ups for a lead."""
+    try:
+        return pause_sequence(
+            get_settings(),
+            user.id,
+            user.role,
+            lead_id,
+            reason=request.reason,
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to pause outreach sequence",
+        ) from exc
+
+
+@router.post("/outreach/{lead_id}/sequence/resume", tags=["outreach"])
+async def resume_outreach_sequence(
+    lead_id: str,
+    user: CurrentUser = Depends(
+        require_roles("admin", "manager")
+    ),
+) -> dict:
+    """Resume a previously paused outreach sequence."""
+    try:
+        return resume_sequence(
+            get_settings(),
+            user.id,
+            user.role,
+            lead_id,
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to resume outreach sequence",
+        ) from exc
+
+
+@router.post("/outreach/sequences/run-due", tags=["outreach"])
+async def execute_due_outreach_sequences(
+    request: RunDueFollowupsRequest,
+    user: CurrentUser = Depends(
+        require_roles("admin", "manager")
+    ),
+) -> dict:
+    """Process currently due automated email follow-ups."""
+    try:
+        return run_due_followups(
+            get_settings(),
+            user.id,
+            user.role,
+            limit=request.limit,
+        )
+    except PermissionError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to process due follow-ups",
         ) from exc
 
 

@@ -10,6 +10,7 @@ class OutboundLifecycleStatus(StrEnum):
     DRAFT = "draft"
     APPROVED = "approved"
     SCHEDULED = "scheduled"
+    SENDING = "sending"
     SENT = "sent"
     REPLIED = "replied"
     PAUSED = "paused"
@@ -145,6 +146,7 @@ class OutreachMessage(BaseModel):
             self.status
             in {
                 OutboundLifecycleStatus.SCHEDULED,
+                OutboundLifecycleStatus.SENDING,
                 OutboundLifecycleStatus.SENT,
             }
             and not (self.idempotency_key or "").strip()

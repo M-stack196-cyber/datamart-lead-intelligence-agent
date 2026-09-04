@@ -66,6 +66,32 @@ type Detail = {
   evidence: Evidence[];
 };
 
+type SequenceMessage = {
+  id: string;
+  step_number: number | null;
+  status: string;
+  subject: string | null;
+  scheduled_at: string | null;
+  sent_at: string | null;
+  provider_message_id: string | null;
+  error_message: string | null;
+};
+
+type SequenceState = {
+  lead_id: string;
+  sequence_id: string;
+  status: string;
+  current_step_number: number;
+  next_run_at: string | null;
+  paused_reason: string | null;
+  last_error: string | null;
+  total_steps: number;
+  messages: SequenceMessage[];
+};
+
+
+type Role = "admin" | "manager" | "sales";
+
 const apiUrl =
   process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
@@ -78,6 +104,8 @@ export function OutreachWorkspace() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [selectedId, setSelectedId] = useState("");
   const [detail, setDetail] = useState<Detail | null>(null);
+  const [sequence, setSequence] = useState<SequenceState | null>(null);
+  const [role, setRole] = useState<Role | null>(null);
 
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
@@ -174,6 +202,27 @@ export function OutreachWorkspace() {
       setLeads(payload);
     }, [request]);
 
+  const loadSequence = useCallback(
+    async (leadId: string) => {
+      if (!leadId) {
+        setSequence(null);
+        return;
+      }
+
+      try {
+        const payload =
+          (await request(
+            `/outreach/${leadId}/sequence`,
+          )) as SequenceState;
+
+        setSequence(payload);
+      } catch {
+        setSequence(null);
+      }
+    },
+    [request],
+  );
+
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -194,9 +243,13 @@ export function OutreachWorkspace() {
       setSelectedId(nextId);
 
       if (nextId) {
-        await loadDetail(nextId);
+        await Promise.all([
+          loadDetail(nextId),
+          loadSequence(nextId),
+        ]);
       } else {
         setDetail(null);
+        setSequence(null);
       }
     } catch (cause) {
       setError(
@@ -209,6 +262,7 @@ export function OutreachWorkspace() {
     }
   }, [
     loadDetail,
+    loadSequence,
     request,
     selectedId,
   ]);
@@ -223,6 +277,33 @@ export function OutreachWorkspace() {
       window.clearTimeout(task);
   }, [load]);
 
+  useEffect(() => {
+    if (!supabase) {
+      return;
+    }
+
+    void supabase.auth.getUser().then(
+      async ({ data }) => {
+        if (!data.user) {
+          setRole(null);
+          return;
+        }
+
+        const { data: profile } =
+          await supabase
+            .from("profiles")
+            .select("role")
+            .eq("id", data.user.id)
+            .single();
+
+        setRole(
+          (profile?.role as Role | undefined) ??
+            null,
+        );
+      },
+    );
+  }, [supabase]);
+
   async function choose(
     leadId: string,
   ) {
@@ -231,7 +312,10 @@ export function OutreachWorkspace() {
     setNotice("");
 
     try {
-      await loadDetail(leadId);
+      await Promise.all([
+        loadDetail(leadId),
+        loadSequence(leadId),
+      ]);
     } catch (cause) {
       setError(
         cause instanceof Error
@@ -409,13 +493,155 @@ export function OutreachWorkspace() {
         );
       }
 
-      await loadDetail(selectedId);
-      await refreshLeadList();
+      await Promise.all([
+        loadDetail(selectedId),
+        loadSequence(selectedId),
+        refreshLeadList(),
+      ]);
     } catch (cause) {
       setError(
         cause instanceof Error
           ? cause.message
           : "Unable to send outreach",
+      );
+    } finally {
+      setBusy("");
+    }
+  }
+
+
+  async function pauseSequence() {
+    if (!selectedId) {
+      return;
+    }
+
+    const reason = window.prompt(
+      "Why are you pausing this outreach sequence?",
+      "Paused for review",
+    );
+
+    if (!reason?.trim()) {
+      return;
+    }
+
+    setBusy("pause-sequence");
+    setError("");
+    setNotice("");
+
+    try {
+      await request(
+        `/outreach/${selectedId}/sequence/pause`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            reason: reason.trim(),
+          }),
+        },
+      );
+
+      setNotice(
+        "Automated follow-ups paused for this lead.",
+      );
+
+      await loadSequence(selectedId);
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Unable to pause sequence",
+      );
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function resumeSequence() {
+    if (!selectedId) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Resume automated follow-ups for this lead?",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setBusy("resume-sequence");
+    setError("");
+    setNotice("");
+
+    try {
+      await request(
+        `/outreach/${selectedId}/sequence/resume`,
+        {
+          method: "POST",
+          body: "{}",
+        },
+      );
+
+      setNotice(
+        "Automated follow-ups resumed.",
+      );
+
+      await loadSequence(selectedId);
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Unable to resume sequence",
+      );
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function runDueFollowups() {
+    const confirmed = window.confirm(
+      "Run all currently due automated follow-ups now?",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setBusy("run-due");
+    setError("");
+    setNotice("");
+
+    try {
+      const result =
+        (await request(
+          "/outreach/sequences/run-due",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              limit: 50,
+            }),
+          },
+        )) as {
+          processed: number;
+        };
+
+      setNotice(
+        `${result.processed} due follow-up${
+          result.processed === 1 ? "" : "s"
+        } processed.`,
+      );
+
+      if (selectedId) {
+        await Promise.all([
+          loadDetail(selectedId),
+          loadSequence(selectedId),
+          refreshLeadList(),
+        ]);
+      }
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : "Unable to run due follow-ups",
       );
     } finally {
       setBusy("");
@@ -1005,6 +1231,243 @@ export function OutreachWorkspace() {
                   Generate a draft to begin
                   review.
                 </p>
+              )}
+            </article>
+
+            <article className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="font-bold text-slate-950">
+                    Sequence automation
+                  </h2>
+
+                  <p className="mt-1 text-sm text-slate-500">
+                    Follow-up timing, progress, and execution history
+                    for this lead.
+                  </p>
+                </div>
+
+                {(role === "admin" ||
+                  role === "manager") && (
+                  <div className="flex flex-wrap gap-2">
+                  {sequence?.status === "scheduled" && (
+                    <button
+                      type="button"
+                      disabled={Boolean(busy)}
+                      onClick={() =>
+                        void pauseSequence()
+                      }
+                      className="rounded-xl border border-amber-300 px-4 py-2 text-sm font-bold text-amber-800 disabled:opacity-40"
+                    >
+                      {busy === "pause-sequence"
+                        ? "Pausing..."
+                        : "Pause"}
+                    </button>
+                  )}
+
+                  {sequence?.status === "paused" && (
+                    <button
+                      type="button"
+                      disabled={Boolean(busy)}
+                      onClick={() =>
+                        void resumeSequence()
+                      }
+                      className="rounded-xl bg-teal-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-40"
+                    >
+                      {busy === "resume-sequence"
+                        ? "Resuming..."
+                        : "Resume"}
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    disabled={Boolean(busy)}
+                    onClick={() =>
+                      void runDueFollowups()
+                    }
+                    className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-bold text-white disabled:opacity-40"
+                  >
+                    {busy === "run-due"
+                      ? "Running..."
+                      : "Run due follow-ups"}
+                  </button>
+                  </div>
+                )}
+              </div>
+
+              {!sequence ? (
+                <p className="mt-5 text-sm text-slate-500">
+                  No active sequence yet. After the first approved
+                  email is sent, the next follow-up will be scheduled
+                  automatically.
+                </p>
+              ) : (
+                <>
+                  <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="rounded-2xl bg-slate-50 p-4">
+                      <p className="text-xs font-semibold uppercase text-slate-500">
+                        Status
+                      </p>
+
+                      <p className="mt-2 font-bold capitalize text-slate-950">
+                        {sequence.status}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl bg-slate-50 p-4">
+                      <p className="text-xs font-semibold uppercase text-slate-500">
+                        Progress
+                      </p>
+
+                      <p className="mt-2 font-bold text-slate-950">
+                        Step {sequence.current_step_number} of{" "}
+                        {sequence.total_steps}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl bg-slate-50 p-4">
+                      <p className="text-xs font-semibold uppercase text-slate-500">
+                        Next follow-up
+                      </p>
+
+                      <p className="mt-2 text-sm font-bold text-slate-950">
+                        {sequence.next_run_at
+                          ? new Date(
+                              sequence.next_run_at,
+                            ).toLocaleString()
+                          : "None"}
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl bg-slate-50 p-4">
+                      <p className="text-xs font-semibold uppercase text-slate-500">
+                        Messages
+                      </p>
+
+                      <p className="mt-2 font-bold text-slate-950">
+                        {sequence.messages.length}
+                      </p>
+                    </div>
+                  </div>
+
+                  {sequence.paused_reason && (
+                    <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                      <p className="text-sm font-bold text-amber-900">
+                        Sequence paused
+                      </p>
+
+                      <p className="mt-1 text-sm text-amber-800">
+                        {sequence.paused_reason}
+                      </p>
+                    </div>
+                  )}
+
+                  {sequence.last_error && (
+                    <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4">
+                      <p className="text-sm font-bold text-red-900">
+                        Last execution error
+                      </p>
+
+                      <p className="mt-1 text-sm text-red-800">
+                        {sequence.last_error}
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200">
+                    <div className="border-b border-slate-200 bg-slate-50 px-4 py-3">
+                      <h3 className="text-sm font-bold text-slate-950">
+                        Sequence history
+                      </h3>
+                    </div>
+
+                    {sequence.messages.length === 0 ? (
+                      <p className="p-4 text-sm text-slate-500">
+                        No sequence messages recorded.
+                      </p>
+                    ) : (
+                      <div className="divide-y divide-slate-100">
+                        {sequence.messages.map(
+                          (item) => (
+                            <div
+                              key={item.id}
+                              className="grid gap-3 p-4 md:grid-cols-[5rem_8rem_1fr_auto]"
+                            >
+                              <div>
+                                <p className="text-xs text-slate-500">
+                                  Step
+                                </p>
+
+                                <p className="font-bold text-slate-950">
+                                  {item.step_number ?? "—"}
+                                </p>
+                              </div>
+
+                              <div>
+                                <p className="text-xs text-slate-500">
+                                  Status
+                                </p>
+
+                                <span
+                                  className={
+                                    "mt-1 inline-block rounded-full px-2 py-1 text-[10px] font-bold uppercase " +
+                                    statusClasses(
+                                      item.status,
+                                    )
+                                  }
+                                >
+                                  {item.status}
+                                </span>
+                              </div>
+
+                              <div>
+                                <p className="text-xs text-slate-500">
+                                  Subject
+                                </p>
+
+                                <p className="mt-1 text-sm font-semibold text-slate-900">
+                                  {item.subject ||
+                                    "No subject"}
+                                </p>
+
+                                {item.error_message && (
+                                  <p className="mt-1 text-xs text-red-700">
+                                    {item.error_message}
+                                  </p>
+                                )}
+                              </div>
+
+                              <div className="text-xs text-slate-500 md:text-right">
+                                {item.sent_at ? (
+                                  <>
+                                    <p>Sent</p>
+                                    <p className="mt-1 font-semibold text-slate-700">
+                                      {new Date(
+                                        item.sent_at,
+                                      ).toLocaleString()}
+                                    </p>
+                                  </>
+                                ) : item.scheduled_at ? (
+                                  <>
+                                    <p>Scheduled</p>
+                                    <p className="mt-1 font-semibold text-slate-700">
+                                      {new Date(
+                                        item.scheduled_at,
+                                      ).toLocaleString()}
+                                    </p>
+                                  </>
+                                ) : (
+                                  <p>—</p>
+                                )}
+                              </div>
+                            </div>
+                          ),
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </>
               )}
             </article>
 
