@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { CollectionSearchBar } from "@/components/collection-search-bar";
 
 type Role = "admin" | "manager" | "sales";
 type Profile = {
@@ -33,6 +34,19 @@ export function TeamWorkspace() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [roleFilter, setRoleFilter] = useState("all");
+  const [activityFilter, setActivityFilter] = useState("all");
+
+  const visibleProfiles = useMemo(() => {
+    const search = searchTerm.trim().toLocaleLowerCase();
+    return profiles.filter((profile) => {
+      const matchesSearch = !search || [profile.full_name, profile.email].some((value) => value?.toLocaleLowerCase().includes(search));
+      const matchesRole = roleFilter === "all" || profile.role === roleFilter;
+      const matchesActivity = activityFilter === "all" || profile.is_active === (activityFilter === "active");
+      return matchesSearch && matchesRole && matchesActivity;
+    });
+  }, [activityFilter, profiles, roleFilter, searchTerm]);
 
   const load = useCallback(async () => {
     if (!supabase) return;
@@ -134,7 +148,27 @@ export function TeamWorkspace() {
           <p className="p-4 text-sm text-slate-500">No profiles are visible to this account.</p>
         ) : (
           <div className="space-y-3">
-            {profiles.map((profile) => (
+            <CollectionSearchBar compact label="Search team" placeholder="Search by name or email" value={searchTerm} onChange={setSearchTerm} shownCount={visibleProfiles.length} totalCount={profiles.length} noun="team members">
+              <label className="text-sm font-bold text-slate-700">
+                Role
+                <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 font-normal text-slate-950">
+                  <option value="all">All</option>
+                  <option value="admin">Admin</option>
+                  <option value="manager">Manager</option>
+                  <option value="sales">Sales</option>
+                </select>
+              </label>
+              <label className="text-sm font-bold text-slate-700">
+                Account status
+                <select value={activityFilter} onChange={(event) => setActivityFilter(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 font-normal text-slate-950">
+                  <option value="all">All</option>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </label>
+            </CollectionSearchBar>
+            {visibleProfiles.length === 0 && <p className="p-6 text-center text-sm text-slate-500">No team members match the current search and filters.</p>}
+            {visibleProfiles.map((profile) => (
               <article key={profile.id} className="flex flex-col gap-3 rounded-2xl border border-slate-200 p-4 md:flex-row md:items-center md:justify-between">
                 <div>
                   <p className="text-lg font-bold text-slate-950">{profile.full_name || profile.email}</p>

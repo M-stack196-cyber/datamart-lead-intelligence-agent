@@ -28,11 +28,17 @@ type Score = {
 };
 type Evidence = {
   id: string;
+  evidence_type: string;
   title: string;
   source_url: string;
   publisher: string | null;
   excerpt: string | null;
   supports_fields: string[];
+  published_at: string | null;
+  activity_at: string | null;
+  intent_signal: string | null;
+  intent_reason: string | null;
+  intent_score_delta: number | null;
 };
 type Lead = {
   id: string;
@@ -40,6 +46,7 @@ type Lead = {
   company_name: string | null;
   title: string | null;
   email: string | null;
+  linkedin_url?: string | null;
   country: string | null;
   industry: string | null;
   status: string;
@@ -57,6 +64,8 @@ const eligibleDispositions = new Set([
 const latestScore = (lead: Lead) =>
   [...lead.lead_scores].sort((a, b) => b.scored_at.localeCompare(a.scored_at))[0];
 
+type SortOrder = "newest" | "oldest" | "icp" | "intent";
+
 export function ReviewWorkspace() {
   const supabase = useMemo(() => createBrowserSupabaseClient(), []);
   const [role, setRole] = useState<Role | null>(null);
@@ -66,6 +75,51 @@ export function ReviewWorkspace() {
   const [busyId, setBusyId] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [intentFilter, setIntentFilter] = useState("all");
+  const [sortOrder, setSortOrder] = useState<SortOrder>("newest");
+
+  const visibleLeads = useMemo(() => {
+    const normalizedSearch = searchTerm.trim().toLocaleLowerCase();
+    const filteredLeads = leads.filter((lead) => {
+      const score = latestScore(lead);
+      const matchesSearch =
+        !normalizedSearch ||
+        [
+          lead.person_name,
+          lead.company_name,
+          lead.email,
+          lead.title,
+          lead.linkedin_url,
+          lead.country,
+          lead.industry,
+        ].some((value) => value?.toLocaleLowerCase().includes(normalizedSearch));
+      const matchesStatus =
+        statusFilter === "all" || lead.status.toLocaleLowerCase() === statusFilter;
+      const intentLevel = score?.intent_level?.toLocaleLowerCase() || "unknown";
+      const matchesIntent = intentFilter === "all" || intentLevel === intentFilter;
+
+      return matchesSearch && matchesStatus && matchesIntent;
+    });
+
+    if (sortOrder === "oldest") return filteredLeads.reverse();
+    if (sortOrder === "icp") {
+      return filteredLeads.sort(
+        (first, second) =>
+          (latestScore(second)?.score ?? -1) - (latestScore(first)?.score ?? -1),
+      );
+    }
+    if (sortOrder === "intent") {
+      return filteredLeads.sort(
+        (first, second) =>
+          (latestScore(second)?.intent_score ?? -1) -
+          (latestScore(first)?.intent_score ?? -1),
+      );
+    }
+
+    return filteredLeads;
+  }, [intentFilter, leads, searchTerm, sortOrder, statusFilter]);
 
   const load = useCallback(async () => {
     if (!supabase) return;
@@ -76,7 +130,7 @@ export function ReviewWorkspace() {
       supabase.from("profiles").select("role").eq("id", userData.user.id).single(),
       supabase
         .from("leads")
-        .select("id,person_name,company_name,title,email,country,industry,status,sales_approved_at,lead_scores(score,disposition,tier,persona,hard_stops,review_reasons,evaluations,intent_score,intent_level,intent_reasons,scored_at),evidence(id,title,source_url,publisher,excerpt,supports_fields),outreach_drafts(id,channel,subject,body,status,evidence_ids,created_by,reviewed_by,reviewed_at,review_notes,updated_at)")
+        .select("id,person_name,company_name,title,email,country,industry,status,sales_approved_at,lead_scores(score,disposition,tier,persona,hard_stops,review_reasons,evaluations,intent_score,intent_level,intent_reasons,scored_at),evidence(id,evidence_type,title,source_url,publisher,excerpt,supports_fields,published_at,activity_at,intent_signal,intent_reason,intent_score_delta),outreach_drafts(id,channel,subject,body,status,evidence_ids,created_by,reviewed_by,reviewed_at,review_notes,updated_at)")
         .order("updated_at", { ascending: false })
         .limit(100),
     ]);
@@ -162,7 +216,73 @@ export function ReviewWorkspace() {
         <p className="rounded-3xl bg-white p-8 text-sm text-slate-500">No leads are currently visible to your role.</p>
       ) : (
         <div className="space-y-5">
-          {leads.map((lead) => {
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="grid gap-4 xl:grid-cols-[minmax(18rem,1fr)_repeat(3,minmax(10rem,0.35fr))]">
+              <label className="text-sm font-bold text-slate-700">
+                Search leads
+                <input
+                  type="search"
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  placeholder="Search by name, company, email, title, or LinkedIn URL"
+                  className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2 font-normal text-slate-950 placeholder:text-slate-400"
+                />
+              </label>
+              <label className="text-sm font-bold text-slate-700">
+                Status
+                <select
+                  value={statusFilter}
+                  onChange={(event) => setStatusFilter(event.target.value)}
+                  className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 font-normal text-slate-950"
+                >
+                  <option value="all">All</option>
+                  <option value="researching">researching</option>
+                  <option value="review">review</option>
+                  <option value="qualified">qualified</option>
+                  <option value="disqualified">disqualified</option>
+                  <option value="nurture">nurture</option>
+                </select>
+              </label>
+              <label className="text-sm font-bold text-slate-700">
+                Intent
+                <select
+                  value={intentFilter}
+                  onChange={(event) => setIntentFilter(event.target.value)}
+                  className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 font-normal text-slate-950"
+                >
+                  <option value="all">All</option>
+                  <option value="high">high</option>
+                  <option value="medium">medium</option>
+                  <option value="low">low</option>
+                  <option value="unknown">unknown</option>
+                </select>
+              </label>
+              <label className="text-sm font-bold text-slate-700">
+                Sort
+                <select
+                  value={sortOrder}
+                  onChange={(event) => setSortOrder(event.target.value as SortOrder)}
+                  className="mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 font-normal text-slate-950"
+                >
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                  <option value="icp">Highest ICP score</option>
+                  <option value="intent">Highest intent score</option>
+                </select>
+              </label>
+            </div>
+            <p className="mt-4 text-xs font-medium text-slate-500" aria-live="polite">
+              Showing {visibleLeads.length} of {leads.length} leads
+            </p>
+          </div>
+
+          {visibleLeads.length === 0 && (
+            <p className="rounded-3xl bg-white p-8 text-sm text-slate-500">
+              No leads match the current search and filters.
+            </p>
+          )}
+
+          {visibleLeads.map((lead) => {
             const score = latestScore(lead);
             const canApprove = Boolean(
               score &&
@@ -238,16 +358,82 @@ export function ReviewWorkspace() {
                   <h3 className="font-bold text-slate-950">Stored evidence ({lead.evidence.length})</h3>
                   {lead.evidence.length ? (
                     <div className="mt-3 grid gap-3 lg:grid-cols-2">
-                      {lead.evidence.map((item) => (
-                        <div key={item.id} className="rounded-xl border border-slate-200 p-4">
-                          <a href={item.source_url} target="_blank" rel="noreferrer" className="font-bold text-teal-700">{item.title} ↗</a>
-                          <p className="mt-1 text-xs text-slate-500">{item.publisher || "Publisher unknown"}</p>
-                          {item.excerpt && <p className="mt-2 text-sm leading-6 text-slate-600">{item.excerpt}</p>}
-                          <p className="mt-2 text-xs text-slate-500">
-                            Supports: {item.supports_fields.length ? item.supports_fields.join(", ") : "No fields declared"}
-                          </p>
-                        </div>
-                      ))}
+                      {lead.evidence.map((item) => {
+                        const isLinkedIn =
+                          item.evidence_type === "linkedin_post" ||
+                          item.evidence_type === "linkedin_comment" ||
+                          item.evidence_type === "linkedin_activity";
+
+                        const activityDate =
+                          item.activity_at || item.published_at;
+
+                        return (
+                          <div key={item.id} className="rounded-xl border border-slate-200 p-4">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold uppercase text-slate-700">
+                                {item.evidence_type.replaceAll("_", " ")}
+                              </span>
+
+                              {activityDate && (
+                                <span className="text-xs text-slate-500">
+                                  {new Date(activityDate).toLocaleString()}
+                                </span>
+                              )}
+                            </div>
+
+                            <a
+                              href={item.source_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="mt-3 block font-bold text-teal-700"
+                            >
+                              {item.title} ↗
+                            </a>
+
+                            <p className="mt-1 text-xs text-slate-500">
+                              {item.publisher || (isLinkedIn ? "LinkedIn" : "Publisher unknown")}
+                            </p>
+
+                            {item.excerpt && (
+                              <p className="mt-3 text-sm leading-6 text-slate-600">
+                                {item.excerpt}
+                              </p>
+                            )}
+
+                            {isLinkedIn && (
+                              <div className="mt-4 rounded-xl bg-teal-50 p-3">
+                                <p className="text-xs font-bold uppercase text-teal-800">
+                                  Intent evidence
+                                </p>
+
+                                <p className="mt-2 text-sm text-slate-800">
+                                  <span className="font-bold">Signal:</span>{" "}
+                                  {item.intent_signal || "Not classified"}
+                                </p>
+
+                                <p className="mt-1 text-sm text-slate-700">
+                                  <span className="font-bold">Reason:</span>{" "}
+                                  {item.intent_reason || "No intent reason recorded"}
+                                </p>
+
+                                <p className="mt-1 text-sm text-slate-700">
+                                  <span className="font-bold">Intent impact:</span>{" "}
+                                  {item.intent_score_delta != null
+                                    ? `+${item.intent_score_delta}`
+                                    : "Not scored"}
+                                </p>
+                              </div>
+                            )}
+
+                            <p className="mt-3 text-xs text-slate-500">
+                              Supports:{" "}
+                              {item.supports_fields.length
+                                ? item.supports_fields.join(", ")
+                                : "No fields declared"}
+                            </p>
+                          </div>
+                        );
+                      })}
                     </div>
                   ) : (
                     <p className="mt-2 text-sm text-slate-500">No provider-returned evidence is stored for this lead.</p>

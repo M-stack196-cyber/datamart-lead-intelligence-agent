@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { CollectionSearchBar } from "@/components/collection-search-bar";
 
 type Score = {
   score: number;
@@ -168,6 +169,7 @@ export function OutreachWorkspace() {
   );
 
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [leadSearch, setLeadSearch] = useState("");
   const [selectedId, setSelectedId] = useState("");
   const [detail, setDetail] = useState<Detail | null>(null);
   const [sequence, setSequence] = useState<SequenceState | null>(null);
@@ -184,6 +186,21 @@ export function OutreachWorkspace() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+
+  const visibleLeads = useMemo(() => {
+    const search = leadSearch.trim().toLocaleLowerCase();
+    if (!search) return leads;
+    return leads.filter((lead) => [
+      lead.person_name,
+      lead.company_name,
+      lead.title,
+      lead.email,
+      lead.linkedin_url,
+      lead.status,
+      lead.outreach_status,
+      lead.latest_draft_status,
+    ].some((value) => value?.toLocaleLowerCase().includes(search)));
+  }, [leadSearch, leads]);
 
   const request = useCallback(
     async (
@@ -1006,6 +1023,19 @@ export function OutreachWorkspace() {
             </p>
           </div>
 
+          {!loading && leads.length > 0 && (
+            <CollectionSearchBar
+              compact
+              label="Search eligible leads"
+              placeholder="Search by name, company, title, email, URL, or status"
+              value={leadSearch}
+              onChange={setLeadSearch}
+              shownCount={visibleLeads.length}
+              totalCount={leads.length}
+              noun="leads"
+            />
+          )}
+
           {loading ? (
             <p className="p-5 text-sm text-slate-500">
               Loading…
@@ -1014,9 +1044,13 @@ export function OutreachWorkspace() {
             <p className="p-5 text-sm text-slate-500">
               No eligible leads.
             </p>
+          ) : visibleLeads.length === 0 ? (
+            <p className="p-5 text-sm text-slate-500">
+              No eligible leads match your search.
+            </p>
           ) : (
             <div className="max-h-[44rem] overflow-y-auto">
-              {leads.map((lead) => (
+              {visibleLeads.map((lead) => (
                 <button
                   type="button"
                   key={lead.id}
