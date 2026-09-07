@@ -51,12 +51,91 @@ class IntentEngine:
         if evidence:
             score += 25
             reasons.append("Evidence available for the lead")
+
             for item in evidence[:2]:
-                text = (item.get("excerpt") or item.get("title") or "").strip()
-                if "hiring" in text.lower() or "raise" in text.lower() or "funding" in text.lower() or "expands" in text.lower() or "launch" in text.lower():
+                text = (
+                    item.get("excerpt")
+                    or item.get("title")
+                    or ""
+                ).strip()
+
+                if any(
+                    keyword in text.lower()
+                    for keyword in [
+                        "hiring",
+                        "raise",
+                        "funding",
+                        "expands",
+                        "launch",
+                    ]
+                ):
                     score += 15
-                    reasons.append("Hiring or expansion signal")
+                    reasons.append(
+                        "Hiring or expansion signal"
+                    )
                     break
+
+            structured_delta = 0
+            has_linkedin_signal = False
+
+            linkedin_types = {
+                "linkedin_post",
+                "linkedin_comment",
+                "linkedin_activity",
+            }
+
+            for item in evidence:
+                delta = item.get(
+                    "intent_score_delta"
+                )
+
+                if isinstance(delta, bool):
+                    delta = None
+
+                if isinstance(delta, int):
+                    structured_delta += max(
+                        0,
+                        min(100, delta),
+                    )
+
+                reason = item.get(
+                    "intent_reason"
+                )
+
+                if (
+                    isinstance(reason, str)
+                    and reason.strip()
+                    and reason.strip()
+                    not in reasons
+                ):
+                    reasons.append(
+                        reason.strip()
+                    )
+
+                if (
+                    item.get("evidence_type")
+                    in linkedin_types
+                    and isinstance(delta, int)
+                    and delta > 0
+                ):
+                    has_linkedin_signal = True
+
+            if structured_delta:
+                score += min(
+                    structured_delta,
+                    40,
+                )
+                reasons.append(
+                    "Source-backed activity provides "
+                    "direct intent evidence"
+                )
+
+            if has_linkedin_signal:
+                reasons.append(
+                    "LinkedIn activity provides "
+                    "direct intent evidence"
+                )
+
         else:
             score -= 20
             reasons.append("No supporting evidence; intent cannot be validated")

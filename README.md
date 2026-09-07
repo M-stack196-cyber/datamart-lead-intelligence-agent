@@ -6,9 +6,10 @@ evidence-grounded analysis, and Supabase for PostgreSQL and authentication.
 
 This checkpoint contains the verified repository history through its Phase 9 checkpoint. It includes
 versioned ICP scoring, validated lead intake, Vibe enrichment boundaries, live capture and intent
-scoring, decision fusion, a basic review/approval flow, the sales handoff/export gate, and implemented
+scoring, decision fusion, a review/approval flow, the sales handoff/export gate, and implemented
 team/settings screens. Sensitive runtime configuration remains backend-only. The end-to-end persisted
-intelligence, outreach, and email workflows described in later delivery phases are not complete yet.
+intelligence, outreach, and email workflows described in later delivery phases are implemented in code
+and gated by the listed migrations.
 
 ## Known phase status
 
@@ -19,8 +20,8 @@ intelligence, outreach, and email workflows described in later delivery phases a
 5. Phase 4 — live capture and queueing: complete
 6. Phase 5 — intent scoring and evidence-based ranking: complete
 7. Phase 6 — decision fusion and review readiness: complete
-8. Phase 7 — approval review and outreach service boundaries: verified in code; full draft lifecycle is not implemented
-9. Phase 8 — controlled Vibe worker and lead-management UI: verified in code; persisted scoring/intent pipeline is not complete
+8. Phase 7 — approval review and outreach service boundaries: verified in code; review, draft, and approval flows are implemented
+9. Phase 8 — controlled Vibe worker and lead-management UI: verified in code; persisted scoring/intent pipeline is implemented
 10. Phase 9 — sales handoff migration, settings, and audit UI: included and verified in code; deployment application is still required
 
 ## ICP intelligence
@@ -84,6 +85,11 @@ add missing variables without replacing existing secrets.
    - `20260903081632_role_enforced_lead_review_workflow.sql`
    - `20260903082524_evidence_grounded_outreach_drafts.sql`
    - `20260903083500_explicitly_approved_gmail_delivery.sql`
+   - `20260903084129_secure_sales_export_and_final_hardening.sql`
+   - `20260904204000_linkedin_intent_evidence.sql`
+   - `20260904213000_automatic_vibe_discovery_intake.sql`
+   - `20260904214500_persist_vibe_discovery_intelligence.sql`
+   - `20260907210000_complete_vibe_daily_capture.sql`
 3. With the Supabase CLI installed and the project linked, preview with `supabase db push --dry-run`, apply with `supabase db push`, and confirm local/remote history with `supabase migration list`.
 4. Add the project URL and publishable/anon key to the frontend variables in the ignored `.env`.
 5. Add the URL, anon key, service-role key, and database URL to the backend variables.
@@ -129,6 +135,21 @@ npm run dev:worker
 # Optional only after setting VIBE_APPROVED_JOB_LIMIT=3:
 backend/.venv/bin/python -m app.workers.runner --limit 3
 ```
+
+## Daily Vibe discovery
+
+The protected `GET /internal/vibe/discovery-cycle` endpoint runs one bounded discovery cycle. It
+stores every valid provider prospect, updates missing fields on duplicates, records deterministic ICP
+and intent results, persists only source-grounded evidence, and creates unsent drafts only for
+qualified leads with evidence and no hard stop. The cycle never invokes Gmail delivery.
+
+- Set backend-only `VIBE_API_KEY` and `CRON_SECRET` values in each deployed backend environment.
+- Set `DAILY_VIBE_LEAD_LIMIT` to `10`, `25`, `50`, or `100` for a staged rollout; the default is `100`.
+- Values above `100` require the deliberate `VIBE_ALLOW_OVER_DAILY_CAP=true` override and are split
+  into database batches of at most 100 records.
+- Keep Gmail OAuth values backend-only. Sending still requires the existing sales approval, draft
+  approval, and explicit confirmation path.
+- The Vercel cron calls the endpoint daily and supplies `Authorization: Bearer <CRON_SECRET>`.
 
 ## Phase B outreach preparation
 

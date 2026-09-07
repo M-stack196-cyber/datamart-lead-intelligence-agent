@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+from secrets import compare_digest
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from supabase import create_client
 
 from app.api.auth import CurrentUser, require_roles, require_user
@@ -54,6 +56,8 @@ from app.services.outreach_analytics import (
     get_lead_outreach_timeline,
 )
 
+from app.services.vibe_discovery_cycle import approved_daily_limit, run_vibe_discovery_cycle
+
 router = APIRouter()
 
 def _backend_client(settings: Settings):
@@ -89,7 +93,11 @@ def _generate_outreach_draft(
         .execute()
         .data
     )
-    if not scores or scores[0].get("hard_stops"):
+    if (
+        not scores
+        or scores[0].get("hard_stops")
+        or scores[0].get("disposition") not in {"Strong Fit", "Good Fit"}
+    ):
         raise ValueError("An eligible score without hard stops is required")
     evidence = (
         client.table("evidence")
@@ -947,3 +955,84 @@ async def send_approved_email(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail="Unable to send approved email") from exc
+
+
+@router.get("/internal/vibe/discovery-cycle")
+async def run_internal_vibe_discovery_cycle(
+    authorization: str | None = Header(default=None),
+    limit: int | None = Query(default=None, ge=1),
+):
+    settings = get_settings()
+
+    if not settings.cron_secret:
+        raise HTTPException(
+            status_code=503,
+            detail="Cron authentication is not configured",
+        )
+
+    expected = f"Bearer {settings.cron_secret}"
+
+    if authorization is None or not compare_digest(authorization, expected):
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized",
+        )
+
+    if (
+        not settings.supabase_url
+        or not settings.supabase_service_role_key
+    ):
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Supabase service-role "
+                "configuration is required"
+            ),
+        )
+
+    if not settings.vibe_api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="Vibe API configuration is required",
+        )
+
+    client = create_client(
+        settings.supabase_url,
+        settings.supabase_service_role_key,
+    )
+
+    try:
+        requested_limit = approved_daily_limit(
+            limit,
+            settings.daily_vibe_lead_limit,
+            allow_over_cap=settings.vibe_allow_over_daily_cap,
+        )
+        result = run_vibe_discovery_cycle(
+            client,
+            size=requested_limit,
+            page_size=min(requested_limit, 100),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to complete the Vibe discovery cycle",
+        ) from exc
+
+    return {
+        "status": "completed_with_errors" if result.errors else "completed",
+        "requested_limit": result.requested_limit,
+        "fetched_count": result.fetched_count,
+        "stored_count": result.stored_count,
+        "duplicate_count": result.duplicate_count,
+        "qualified_count": result.qualified_count,
+        "review_count": result.review_count,
+        "rejected_count": result.rejected_count,
+        "evidence_count": result.evidence_count,
+        "draft_count": result.draft_count,
+        "errors": result.errors,
+        "warnings": result.warnings,
+    }

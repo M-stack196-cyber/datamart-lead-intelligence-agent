@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     vibe_enrichment_enabled: bool = False
     vibe_worker_name: str = "local-vibe-worker"
     vibe_approved_job_limit: int = Field(default=1, ge=1, le=100)
+    daily_vibe_lead_limit: int = Field(default=100, ge=1, le=10_000)
+    vibe_allow_over_daily_cap: bool = False
+    cron_secret: str | None = None
     aws_bearer_token_bedrock: str | None = None
     aws_region: str = "us-east-1"
     bedrock_model_id: str | None = None
@@ -54,6 +57,11 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_runtime_environment(self) -> "Settings":
+        if self.daily_vibe_lead_limit > 100 and not self.vibe_allow_over_daily_cap:
+            raise ValueError(
+                "DAILY_VIBE_LEAD_LIMIT above 100 requires "
+                "VIBE_ALLOW_OVER_DAILY_CAP=true"
+            )
         if self.app_env == "production":
             missing = []
             if not self.supabase_url:

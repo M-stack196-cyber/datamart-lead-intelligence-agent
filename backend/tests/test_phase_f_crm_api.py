@@ -55,11 +55,14 @@ async def request_as(
 
     settings = offline_settings()
 
-    app.dependency_overrides[require_user] = lambda: CurrentUser(
-        id=user_id,
-        role=role,
-        email=f"{user_id}@datamart.test",
-    )
+    async def override_user() -> CurrentUser:
+        return CurrentUser(
+            id=user_id,
+            role=role,
+            email=f"{user_id}@datamart.test",
+        )
+
+    app.dependency_overrides[require_user] = override_user
 
     original_get_settings = router_module.get_settings
     router_module.get_settings = lambda: settings

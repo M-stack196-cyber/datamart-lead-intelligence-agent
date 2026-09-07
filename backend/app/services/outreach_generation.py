@@ -68,7 +68,7 @@ def _score(settings: Settings, lead_id: str) -> dict[str, Any] | None:
     if _uses_fallback(settings):
         return deepcopy(_FALLBACK_SCORES.get(lead_id))
     rows = (_client(settings).table("lead_scores")
-        .select("score,disposition,tier,persona,evaluations,intent_score,intent_level,intent_reasons,scored_at")
+        .select("score,disposition,tier,persona,hard_stops,evaluations,intent_score,intent_level,intent_reasons,scored_at")
         .eq("lead_id", lead_id).order("scored_at", desc=True).limit(1).execute().data or [])
     return rows[0] if rows else None
 
@@ -139,6 +139,8 @@ def _generic(lead: dict[str, Any], channel: str) -> dict[str, Any]:
 def _draft(settings: Settings, lead: dict[str, Any], score: dict[str, Any] | None, evidence: list[dict[str, Any]], channel: str) -> dict[str, Any]:
     if channel != "email":
         raise ValueError("Phase B outbound generation supports email; LinkedIn remains on the legacy copy-only workflow")
+    if not evidence:
+        raise ValueError("Stored evidence is required before drafting outreach")
     if settings.aws_bearer_token_bedrock and settings.bedrock_model_id:
         result = BedrockClient(settings.aws_bearer_token_bedrock, settings.bedrock_model_id).generate_outreach_message(
             lead, evidence, icp_score=(score or {}).get("score"),
@@ -147,8 +149,6 @@ def _draft(settings: Settings, lead: dict[str, Any], score: dict[str, Any] | Non
             intent_signals=[str(item) for item in (score or {}).get("intent_reasons") or []],
         )
         return {**result, "grounding_status": result.get("evidence_coverage") or "partial"}
-    if not evidence:
-        return _generic(lead, channel)
     result = OutreachDraftEngine.draft(lead, evidence, channel=channel, persona=(score or {}).get("persona"))
     return {**result, "provider": "deterministic", "model": None,
         "evidence_refs": result.get("evidence_ids", []), "grounding_status": "grounded",
@@ -337,6 +337,10 @@ def generate_outreach_message(settings: Settings, actor_id: str, role: str, lead
     lead = _lead(settings, lead_id)
     _assert_eligible(settings, lead, actor_id, role)
     evidence, score = _evidence(settings, lead_id), _score(settings, lead_id)
+    if not score or score.get("disposition") not in {"Strong Fit", "Good Fit"}:
+        raise ValueError("Only a qualified lead can receive an outreach draft")
+    if score.get("hard_stops"):
+        raise ValueError("A lead with a hard disqualifier cannot receive outreach")
     draft = _validate(_draft(settings, lead, score, evidence, channel), evidence, lead)
     state = (_fallback_persist(lead, draft, actor_id, False) if _uses_fallback(settings)
              else _db_persist(settings, lead, draft, actor_id, False))

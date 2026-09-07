@@ -103,13 +103,11 @@ async def test_factual_generation_remains_evidence_grounded() -> None:
 
 
 @pytest.mark.anyio
-async def test_insufficient_evidence_produces_safe_generic_copy(monkeypatch) -> None:
+async def test_insufficient_evidence_blocks_draft_generation(monkeypatch) -> None:
     monkeypatch.setitem(service._FALLBACK_EVIDENCE, "lead-01", [])
     response = await request_as("manager", "POST", "/outreach/generate", {"lead_id": "lead-01"})
-    assert response.status_code == 200
-    assert response.json()["evidence_refs"] == []
-    assert response.json()["grounding_status"] == "insufficient_evidence_generic"
-    assert "funding" not in response.json()["body"].lower()
+    assert response.status_code == 400
+    assert "stored evidence is required" in response.json()["detail"].lower()
 
 
 @pytest.mark.anyio

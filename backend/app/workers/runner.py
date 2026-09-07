@@ -26,6 +26,8 @@ SAFE_PROVIDER_FIELDS = {
 }
 ALLOWED_EVIDENCE_TYPES = {
     "linkedin_post",
+    "linkedin_comment",
+    "linkedin_activity",
     "company_page",
     "job_page",
     "news",
@@ -90,6 +92,11 @@ def _evidence_dict(item: Any) -> dict[str, Any] | None:
         "evidence_type": evidence_type,
         "publisher": value.get("publisher"),
         "excerpt": value.get("excerpt"),
+        "published_at": value.get("published_at"),
+        "activity_at": value.get("activity_at"),
+        "intent_signal": value.get("intent_signal"),
+        "intent_reason": value.get("intent_reason"),
+        "intent_score_delta": value.get("intent_score_delta"),
         "supports_fields": supports_fields if isinstance(supports_fields, list) else [],
         "metadata": metadata if isinstance(metadata, dict) else {},
     }
@@ -129,6 +136,40 @@ def build_enrichment_intelligence(lead: dict[str, Any], enrichment: Any) -> Enri
     return EnrichmentIntelligence(fields, evidence, score, intent, lead_status)
 
 
+def _persist_linkedin_evidence_details(
+    client: Any,
+    *,
+    lead_id: str,
+    evidence: list[dict[str, Any]],
+) -> None:
+    linkedin_types = {
+        "linkedin_post",
+        "linkedin_comment",
+        "linkedin_activity",
+    }
+
+    items = [
+        item
+        for item in evidence
+        if item.get("evidence_type")
+        in linkedin_types
+    ]
+
+    if not items:
+        return
+
+    (
+        client
+        .rpc(
+            "store_worker_linkedin_intent_evidence",
+            {
+                "target_lead_id": lead_id,
+                "evidence_items": items,
+            },
+        )
+        .execute()
+    )
+
 def _complete_job(
     client: Any, job: dict[str, Any], lead: dict[str, Any], enrichment: Any
 ) -> dict[str, Any]:
@@ -148,7 +189,23 @@ def _complete_job(
         "intent_result": asdict(intelligence.intent),
         "provider_result": provider_result,
     }
-    return client.rpc("complete_enrichment_intelligence_job", payload).execute().data
+    result = (
+        client
+        .rpc(
+            "complete_enrichment_intelligence_job",
+            payload,
+        )
+        .execute()
+        .data
+    )
+
+    _persist_linkedin_evidence_details(
+        client,
+        lead_id=str(job["lead_id"]),
+        evidence=intelligence.evidence,
+    )
+
+    return result
 
 
 def _fail_job(client: Any, job: dict[str, Any], error: Exception) -> None:
