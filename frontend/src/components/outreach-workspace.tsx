@@ -159,7 +159,7 @@ type OutreachAnalytics = {
 type Role = "admin" | "manager" | "sales";
 
 const apiUrl =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  process.env.NEXT_PUBLIC_API_URL || (process.env.NODE_ENV === "production" ? "/api" : "http://localhost:8000");
 
 export function OutreachWorkspace() {
   const supabase = useMemo(

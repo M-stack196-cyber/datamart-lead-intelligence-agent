@@ -10,6 +10,7 @@ app = FastAPI(
     title="Datamart Lead Intelligence API",
     description="Backend service for the Datamart Lead Intelligence Agent.",
     version="0.1.0",
+    root_path="/api" if settings.app_env == "production" else "",
 )
 
 app.add_middleware(

@@ -41,7 +41,7 @@ export function OutreachDraftPanel({ leadId, role, drafts, evidence, recipient, 
 
   useEffect(() => {
     let active = true;
-    fetch((process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000") + "/health")
+    fetch((process.env.NEXT_PUBLIC_API_URL || (process.env.NODE_ENV === "production" ? "/api" : "http://localhost:8000")) + "/health")
       .then((response) => response.json())
       .then((payload) => {
         if (active) setGmailConfigured(Boolean(payload.integrations_configured?.gmail));
@@ -57,7 +57,7 @@ export function OutreachDraftPanel({ leadId, role, drafts, evidence, recipient, 
     const { data } = await supabase.auth.getSession();
     const token = data.session?.access_token;
     if (!token) throw new Error("Authentication required");
-    const response = await fetch((process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000") + path, {
+    const response = await fetch((process.env.NEXT_PUBLIC_API_URL || (process.env.NODE_ENV === "production" ? "/api" : "http://localhost:8000")) + path, {
       method: "POST",
       headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
       body: JSON.stringify(body),
