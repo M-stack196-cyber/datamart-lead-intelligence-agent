@@ -121,11 +121,21 @@ def build_enrichment_intelligence(lead: dict[str, Any], enrichment: Any) -> Enri
     fields = _provider_fields(enrichment)
     evidence = _provider_evidence(enrichment)
     normalized_lead = {**lead, **fields}
-    score = IcpScoringEngine(icp_repository.get_active()).score(
-        LeadProfile.model_validate(
-            {**normalized_lead, "evidence_urls": [item["source_url"] for item in evidence]}
+    if normalized_lead.get("lead_source") == "vibe":
+        from app.services.vibe_icp_pipeline import score_prospect
+
+        raw = lead.get("raw_source_data")
+        raw = raw if isinstance(raw, dict) else {}
+        score = score_prospect({
+            **raw, **normalized_lead,
+            "evidence_urls": [item["source_url"] for item in evidence],
+        }).score
+    else:
+        score = IcpScoringEngine(icp_repository.get_active()).score(
+            LeadProfile.model_validate(
+                {**normalized_lead, "evidence_urls": [item["source_url"] for item in evidence]}
+            )
         )
-    )
     intent = IntentEngine.score(normalized_lead, evidence)
     if score.hard_stops:
         lead_status = "disqualified"

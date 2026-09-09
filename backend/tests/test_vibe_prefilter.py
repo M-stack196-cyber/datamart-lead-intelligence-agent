@@ -107,7 +107,7 @@ def test_cycle_backfills_rejections_and_deduplicates_repeated_runs(limit):
                     else:
                         inserted += 1
                         self.rows[key] = {**row, 'lead_id': str(len(self.rows))}
-                    mappings.append(self.rows[key])
+                    mappings.append({**self.rows[key], "duplicate": updated > 0 and inserted == 0})
                 return RpcCall(dict(inserted=inserted, updated=updated, leads=mappings))
             assert name == 'persist_vibe_discovery_intelligence'
             return RpcCall(dict(evidence_count=0, evidence_ids=[]))
@@ -115,7 +115,7 @@ def test_cycle_backfills_rejections_and_deduplicates_repeated_runs(limit):
     good = []
     for i in range(limit):
         row = prospect(industry='SaaS')
-        row.update(company_url=f'https://acme{i}.example',
+        row.update(company_name=f'Acme {i}', company_url=f'https://acme{i}.example',
                    linkedin_url=f'https://linkedin.com/in/alex{i}', vibe_prospect_id=str(i))
         good.append(row)
     bad = prospect(industry='newsletter')

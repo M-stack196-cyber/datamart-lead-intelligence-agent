@@ -20,6 +20,7 @@ from app.services.vibe_icp_pipeline import (
     score_discovered_prospects,
 )
 from app.services.vibe_prefilter import prefilter_prospect
+from app.services.vibe_identity import prospect_identities
 
 
 logger = logging.getLogger(__name__)
@@ -103,7 +104,7 @@ def run_vibe_discovery_cycle(
     # search bounded even when Vibe returns only rejects or existing identities.
     stored = duplicates = fetched = qualified = review = rejected = evidence = drafts = 0
     errors: list[str] = []
-    seen: set[tuple[str, str]] = set()
+    seen: set[tuple[str, ...]] = set()
     candidate_budget = requested_limit * 10
     current_page = page
     country_code = "US"
@@ -126,12 +127,9 @@ def run_vibe_discovery_cycle(
         for prospect in discovery.prospects:
             fetched += 1
             country_fetched += 1
-            identities = {
-                (key, str(prospect[key]).strip().rstrip("/").casefold())
-                for key in ("vibe_prospect_id", "vibe_business_id", "linkedin_url", "company_url", "email")
-                if prospect.get(key)
-            }
+            identities = prospect_identities(prospect)
             if identities & seen:
+                seen.update(identities)
                 duplicates += 1
                 continue
             # A rejected contact must not hide a later valid buyer at the same company.
@@ -151,12 +149,12 @@ def run_vibe_discovery_cycle(
         accepted_qualified = scored.qualified[:remaining]
         accepted_review = scored.needs_review[:remaining - len(accepted_qualified)]
         scored = ScoredDiscoveryBatch(accepted_qualified, accepted_review, [])
-        qualified += len(scored.qualified)
-        review += len(scored.needs_review)
         intelligence = enrich_qualified_with_events(
             scored, events_client, timestamp_from=timestamp_from, warnings=warnings,
         )
         persistence = persist_discovery_intelligence(supabase_client, intelligence)
+        qualified += sum(lead.pipeline_status == "qualified" for lead in persistence.leads)
+        review += sum(lead.pipeline_status == "needs_review" for lead in persistence.leads)
         stored += persistence.stored_count
         duplicates += persistence.duplicate_count
         evidence += persistence.evidence_count

@@ -8,6 +8,7 @@ from app.services.qualified_event_intelligence import (
 )
 from app.services.outreach import OutreachDraftEngine
 from app.services.vibe_prefilter import prefilter_prospect
+from app.services.vibe_identity import prospect_identities
 
 
 @dataclass(frozen=True)
@@ -16,6 +17,7 @@ class PersistedLead:
     business_id: str | None
     linkedin_url: str | None
     email: str | None
+    pipeline_status: str = ""
 
 
 @dataclass(frozen=True)
@@ -26,17 +28,6 @@ class DiscoveryPersistenceResult:
     evidence_count: int
     draft_count: int
     errors: list[str]
-
-
-def _normalized_identity(
-    value: str | None,
-) -> str | None:
-    if not isinstance(value, str):
-        return None
-
-    cleaned = value.strip().rstrip("/").casefold()
-
-    return cleaned or None
 
 
 def _prospect_payload(
@@ -58,38 +49,10 @@ def _match_stored_lead(
     prospect: dict[str, Any],
     stored: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
-    identities = (
-        ("linkedin_url", _normalized_identity(prospect.get("linkedin_url"))),
-        ("email", _normalized_identity(prospect.get("email"))),
-        (
-            "company_url",
-            _normalized_identity(
-                prospect.get("company_url") or prospect.get("company_website")
-            ),
-        ),
-        (
-            "vibe_prospect_id",
-            _normalized_identity(
-                prospect.get("vibe_prospect_id") or prospect.get("prospect_id")
-            ),
-        ),
-        (
-            "vibe_business_id",
-            _normalized_identity(
-                prospect.get("vibe_business_id") or prospect.get("business_id")
-            ),
-        ),
-    )
-
-    for field, identity in identities:
-        if not identity:
-            continue
-        for row in stored:
-            if not isinstance(row, dict):
-                continue
-            if _normalized_identity(row.get(field)) == identity:
-                return row
-
+    identities = prospect_identities(prospect)
+    for row in stored:
+        if isinstance(row, dict) and identities & prospect_identities(row):
+            return row
     return None
 
 
@@ -103,11 +66,19 @@ def persist_discovery_intelligence(
 ) -> DiscoveryPersistenceResult:
     rejected_errors = []
     accepted_items = []
+    seen: set[tuple[str, ...]] = set()
+    local_duplicates = 0
     for item in items:
         admission = prefilter_prospect(item.scored_prospect.prospect)
         if not admission.accepted or item.scored_prospect.pipeline_status == "rejected":
             rejected_errors.extend(admission.rejection_reasons or item.scored_prospect.score.hard_stops)
         else:
+            identities = prospect_identities(_prospect_payload(item))
+            if identities & seen:
+                seen.update(identities)
+                local_duplicates += 1
+                continue
+            seen.update(identities)
             accepted_items.append(item)
     items = accepted_items
     if not items:
@@ -121,6 +92,7 @@ def persist_discovery_intelligence(
     ingest_response: dict[str, Any] = {
         "inserted": 0,
         "updated": 0,
+        "duplicates": 0,
         "rejected": 0,
         "errors": [],
         "leads": [],
@@ -140,6 +112,9 @@ def persist_discovery_intelligence(
         if not isinstance(batch_response, dict):
             raise RuntimeError("Unexpected Vibe intake response")
 
+        ingest_response["duplicates"] += int(
+            batch_response.get("duplicates", batch_response.get("updated", 0)) or 0
+        )
         for count_field in ("inserted", "updated", "rejected"):
             ingest_response[count_field] += int(batch_response.get(count_field) or 0)
         for list_field in ("errors", "leads"):
@@ -171,6 +146,7 @@ def persist_discovery_intelligence(
     evidence_count = 0
     draft_count = 0
 
+    processed_ids: set[str] = set()
     for item in items:
         prospect = _prospect_payload(item)
 
@@ -191,6 +167,12 @@ def persist_discovery_intelligence(
         ) or not lead_id.strip():
             errors.append("A discovery mapping did not contain a valid lead ID")
             continue
+
+        # The ingest RPC returns one mapping per input row, including duplicates.
+        # Existing leads must not reappear in output or receive repeat drafts.
+        if stored.get("duplicate") or lead_id in processed_ids:
+            continue
+        processed_ids.add(lead_id)
 
         score_payload = (
             item
@@ -273,6 +255,7 @@ def persist_discovery_intelligence(
         persisted.append(
             PersistedLead(
                 lead_id=lead_id,
+                pipeline_status=item.scored_prospect.pipeline_status,
                 business_id=(
                     item.business_id
                 ),
@@ -292,7 +275,7 @@ def persist_discovery_intelligence(
     return DiscoveryPersistenceResult(
         leads=persisted,
         stored_count=int(ingest_response.get("inserted") or 0),
-        duplicate_count=int(ingest_response.get("updated") or 0),
+        duplicate_count=local_duplicates + int(ingest_response.get("duplicates") or 0),
         evidence_count=evidence_count,
         draft_count=draft_count,
         errors=errors,

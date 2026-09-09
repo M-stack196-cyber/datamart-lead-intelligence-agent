@@ -6,6 +6,7 @@ from typing import Any
 from app.repositories.icp_repository import icp_repository
 from app.schemas.icp import LeadProfile, ScoreResult
 from app.scoring.icp_engine import IcpScoringEngine
+from app.scoring.vibe_score import discovery_evaluations
 from app.services.vibe_prefilter import prefilter_prospect, country_name
 
 
@@ -171,6 +172,11 @@ def score_prospect(
     score = engine.score(profile)
     admission = prefilter_prospect(prospect)
     hard_stops = list(dict.fromkeys(score.hard_stops + admission.rejection_reasons))
+    evaluations = discovery_evaluations(prospect, hard_stops)
+    score = score.model_copy(update={
+        "score": sum(item.points_awarded for item in evaluations),
+        "evaluations": evaluations,
+    })
     if hard_stops:
         score = score.model_copy(update={"disposition": "Disqualified", "hard_stops": hard_stops})
     elif admission.review_reasons:

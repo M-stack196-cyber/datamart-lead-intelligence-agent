@@ -204,13 +204,12 @@ def test_empty_input_skips_database():
             {"linkedin_url": "https://linkedin.com/in/jane/"},
             {"linkedin_url": "https://linkedin.com/in/JANE"},
         ),
-        ({"email": "JANE@example.com"}, {"email": "jane@example.com"}),
         (
-            {"company_website": "https://example.com/"},
-            {"company_url": "https://EXAMPLE.com"},
+            {"company_website": "https://example.com/", "person_name": "Jane"},
+            {"company_url": "https://EXAMPLE.com", "person_name": "JANE"},
         ),
         ({"vibe_prospect_id": "PROSPECT-1"}, {"vibe_prospect_id": "prospect-1"}),
-        ({"vibe_business_id": "BUSINESS-1"}, {"vibe_business_id": "business-1"}),
+        ({"vibe_business_id": "BUSINESS-1", "person_name": "Jane"}, {"vibe_business_id": "business-1", "person_name": "Jane"}),
     ],
 )
 def test_all_supported_provider_identities_match_duplicates(prospect, stored):
