@@ -61,7 +61,10 @@ class FakeEventsClient:
 def qualified_prospect():
     prospect = {
         "person_name": "Jane Founder",
+        "linkedin_url": "https://linkedin.com/in/jane",
         "company_name": "Cloud Labs",
+        "company_url": "https://cloudlabs.example",
+        "company_type": "privately held",
         "title": "Founder",
         "country": "United States",
         "industry": "SaaS",
@@ -147,7 +150,7 @@ def test_no_qualified_prospects_skips_api():
     assert client.calls == []
 
 
-def test_review_and_rejected_prospects_are_kept_for_persistence():
+def test_only_accepted_prospects_are_kept_for_persistence():
     qualified = qualified_prospect()
     batch = ScoredDiscoveryBatch(
         qualified=[qualified],
@@ -157,9 +160,8 @@ def test_review_and_rejected_prospects_are_kept_for_persistence():
 
     results = enrich_qualified_with_events(batch, FakeEventsClient())
 
-    assert len(results) == 3
+    assert len(results) == 2
     assert {item.scored_prospect.pipeline_status for item in results} == {
         "qualified",
         "needs_review",
-        "rejected",
     }

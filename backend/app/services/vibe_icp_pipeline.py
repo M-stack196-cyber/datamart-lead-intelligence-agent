@@ -6,6 +6,7 @@ from typing import Any
 from app.repositories.icp_repository import icp_repository
 from app.schemas.icp import LeadProfile, ScoreResult
 from app.scoring.icp_engine import IcpScoringEngine
+from app.services.vibe_prefilter import prefilter_prospect, country_name
 
 
 @dataclass(frozen=True)
@@ -73,6 +74,9 @@ def prospect_to_lead_profile(
                 value.strip()
             )
 
+    if isinstance(prospect.get("company_url"), str):
+        evidence_urls.append(prospect["company_url"])
+
     linkedin_url = prospect.get(
         "linkedin_url"
     )
@@ -103,7 +107,7 @@ def prospect_to_lead_profile(
                 "company_employee_count"
             )
         ),
-        country=prospect.get("country"),
+        country=country_name(prospect.get("country")) or None,
         industry=prospect.get("industry"),
         business_model=prospect.get(
             "business_model"
@@ -165,6 +169,14 @@ def score_prospect(
     )
 
     score = engine.score(profile)
+    admission = prefilter_prospect(prospect)
+    hard_stops = list(dict.fromkeys(score.hard_stops + admission.rejection_reasons))
+    if hard_stops:
+        score = score.model_copy(update={"disposition": "Disqualified", "hard_stops": hard_stops})
+    elif admission.review_reasons:
+        score = score.model_copy(update={"disposition": "Review", "review_reasons": admission.review_reasons})
+    else:
+        score = score.model_copy(update={"disposition": "Strong Fit" if score.score >= 80 else "Good Fit"})
 
     return ScoredProspect(
         prospect=prospect,

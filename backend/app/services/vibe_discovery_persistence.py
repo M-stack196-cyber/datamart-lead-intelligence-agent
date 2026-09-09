@@ -7,6 +7,7 @@ from app.services.qualified_event_intelligence import (
     QualifiedProspectIntelligence,
 )
 from app.services.outreach import OutreachDraftEngine
+from app.services.vibe_prefilter import prefilter_prospect
 
 
 @dataclass(frozen=True)
@@ -100,8 +101,17 @@ def persist_discovery_intelligence(
     *,
     generate_drafts: bool = True,
 ) -> DiscoveryPersistenceResult:
+    rejected_errors = []
+    accepted_items = []
+    for item in items:
+        admission = prefilter_prospect(item.scored_prospect.prospect)
+        if not admission.accepted or item.scored_prospect.pipeline_status == "rejected":
+            rejected_errors.extend(admission.rejection_reasons or item.scored_prospect.score.hard_stops)
+        else:
+            accepted_items.append(item)
+    items = accepted_items
     if not items:
-        return DiscoveryPersistenceResult([], 0, 0, 0, 0, [])
+        return DiscoveryPersistenceResult([], 0, 0, 0, 0, rejected_errors)
 
     rows = [
         _prospect_payload(item)
@@ -157,6 +167,7 @@ def persist_discovery_intelligence(
         for item in (ingest_response.get("errors") or [])
         if isinstance(item, dict)
     ]
+    errors.extend(rejected_errors)
     evidence_count = 0
     draft_count = 0
 

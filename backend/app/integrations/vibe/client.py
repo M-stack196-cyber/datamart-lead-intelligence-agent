@@ -1,6 +1,7 @@
 """Explorium AgentSource adapter for prospect discovery and lead enrichment."""
 
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -61,6 +62,16 @@ class VibeProspectingClient:
 
     DISCOVERY_FIELD_MAP = {
         **SAFE_FIELD_MAP,
+        "person_name": "person_name",
+        "title": "title",
+        "company_country_code": "country",
+        "company_country": "country",
+        "company_domain": "company_url",
+        "linkedin_category": "industry",
+        "company_type": "company_type",
+        "is_public_company": "is_public_company",
+        "company_description": "company_description",
+        "description": "description",
         "company_website": "company_url",
         "company_url": "company_url",
         "annual_revenue": "annual_revenue",
@@ -150,17 +161,17 @@ class VibeProspectingClient:
         }
 
         prospect_id = (
-            prospect.get("prospect_id")
+            prospect.get("vibe_prospect_id")
+            or prospect.get("prospect_id")
             or prospect.get("id")
         )
 
         if prospect_id:
             normalized["vibe_prospect_id"] = str(prospect_id)
 
-        if prospect.get("business_id"):
-            normalized["vibe_business_id"] = str(
-                prospect["business_id"]
-            )
+        business_id = prospect.get("vibe_business_id") or prospect.get("business_id")
+        if business_id:
+            normalized["vibe_business_id"] = str(business_id)
 
         if prospect.get("job_department"):
             normalized["job_department"] = prospect[
@@ -185,6 +196,9 @@ class VibeProspectingClient:
         if evidence:
             normalized["evidence"] = evidence
 
+        normalized["lead_source"] = "vibe"
+        normalized["source_captured_at"] = datetime.now(timezone.utc).isoformat()
+        normalized["raw_source_data"] = dict(prospect)
         return normalized
 
     @staticmethod

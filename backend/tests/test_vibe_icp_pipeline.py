@@ -9,6 +9,8 @@ def strong_fit_prospect():
     return {
         "person_name": "Jane Founder",
         "company_name": "Cloud Labs",
+        "company_url": "https://cloudlabs.example",
+        "company_type": "privately held",
         "title": "Founder",
         "country": "United States",
         "industry": "SaaS",

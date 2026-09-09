@@ -94,6 +94,8 @@ def intelligence_item():
     prospect = {
         "person_name": "Jane",
         "company_name": "Cloud Labs",
+        "company_url": "https://cloudlabs.example",
+        "company_type": "privately held",
         "title": "Founder",
         "country": "United States",
         "industry": "SaaS",

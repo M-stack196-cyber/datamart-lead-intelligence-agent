@@ -148,7 +148,6 @@ def enrich_qualified_with_events(
     scored_prospects = [
         *batch.qualified,
         *batch.needs_review,
-        *batch.rejected,
     ]
 
     if not scored_prospects:

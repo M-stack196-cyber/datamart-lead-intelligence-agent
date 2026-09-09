@@ -63,7 +63,6 @@ def test_active_icp_maps_to_vibe_filters():
     ]
 
     assert filters["company_revenue"]["values"] == [
-        "0-500K",
         "500K-1M",
         "1M-5M",
         "5M-10M",
@@ -72,7 +71,8 @@ def test_active_icp_maps_to_vibe_filters():
 
     assert "CEO" in filters["job_title"]["values"]
     assert "CTO" in filters["job_title"]["values"]
-    assert filters["has_email"]["value"] is True
+    assert "has_email" not in filters
+    assert "software development" in filters["linkedin_category"]["values"]
 
 
 def test_discovery_uses_active_icp():

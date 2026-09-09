@@ -9,6 +9,7 @@ from app.integrations.vibe.client import (
 )
 from app.repositories.icp_repository import icp_repository
 from app.schemas.icp import IcpDefinition
+from app.services.vibe_prefilter import TITLES
 
 
 COUNTRY_CODE_MAP = {
@@ -86,7 +87,7 @@ def _revenue_buckets(
     return [
         label
         for low, high, label in buckets
-        if high >= minimum and low <= maximum
+        if high > minimum and low < maximum
     ]
 
 
@@ -94,16 +95,13 @@ def build_vibe_filters(
     icp: IcpDefinition,
 ) -> dict[str, Any]:
     filters: dict[str, Any] = {
-        "has_email": {
-            "value": True,
-        },
         "job_title": {
             "values": list(
                 dict.fromkeys(
-                    icp.decision_maker_titles
+                    TITLES
                 )
             ),
-            "include_related_job_titles": True,
+            "include_related_job_titles": False,
         },
     }
 
@@ -134,6 +132,12 @@ def build_vibe_filters(
             "values": revenue_ranges,
         }
 
+    filters["linkedin_category"] = {"values": [
+        "software development", "it services and it consulting",
+        "hospitals and health care", "financial services", "real estate",
+        "retail", "data infrastructure and analytics",
+    ]}
+    # Ownership is not a documented v1 prospect filter; enforce it locally.
     return filters
 
 
@@ -143,10 +147,15 @@ def discover_from_active_icp(
     size: int = 25,
     page_size: int = 25,
     page: int = 1,
+    country_code: str | None = None,
 ) -> DiscoveryBatch:
     icp = icp_repository.get_active()
 
     filters = build_vibe_filters(icp)
+    if country_code is not None:
+        if country_code not in {"US", "AE"}:
+            raise ValueError("Discovery supports US and AE only")
+        filters["company_country_code"] = {"values": [country_code]}
 
     result: VibeDiscoveryResult = client.discover(
         filters=filters,
