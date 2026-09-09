@@ -4,6 +4,7 @@ from typing import Any
 import re
 from urllib.parse import unquote, urlsplit
 from app.services.vibe_identity import company_host, normalized_name
+from app.services.vibe_signals import prepare_vibe_prospect
 
 TITLES = ['Founder', 'CEO', 'Co-Founder', 'CTO', 'VP Engineering',
           'Head of Engineering', 'Director of Engineering', 'Owner',
@@ -127,6 +128,7 @@ class PrefilterResult:
 
 
 def prefilter_prospect(prospect: dict[str, Any]) -> PrefilterResult:
+    prospect = prepare_vibe_prospect(prospect)
     reasons = []
     review = []
     for field in ('company_name', 'person_name', 'title', 'linkedin_url', 'company_url'):

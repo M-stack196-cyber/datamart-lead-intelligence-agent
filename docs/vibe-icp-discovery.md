@@ -79,3 +79,28 @@ The real-PostgreSQL tests accept only a local `/tmp` socket through
 `VIBE_TEST_PG_SOCKET` (port 55439), create their own isolated database, apply the
 migration, test all five identities and concurrent calls, then drop that test
 database. With no test socket configured, those integration tests are skipped.
+
+## Inferred fit from nested Vibe signals
+
+Scoring reads up to three nested `raw_source_data` envelopes, including skills,
+experience, company website/LinkedIn, seniority and department metadata, and
+company descriptions. Actual raw website fields can fill a missing company URL;
+a company LinkedIn page never substitutes for an independent website. Experience
+must identify the current company and cannot have an explicit past/end-date flag.
+Personal skills alone do not establish the company's industry; a technical role
+can corroborate a specific skill as a moderate hypothesis.
+
+User-supplied domain examples and matching company/product context produce
+attributed industry hypotheses worth 15–20 points and inferred software/B2B
+context worth 5–10 points, within the existing 100-point total. A `.ai` suffix or
+a generic Founder/CEO title alone receives no industry bonus. Plain real-estate
+activity is a review signal, not proof of PropTech/software need.
+
+Hypotheses are stored separately as `inferred_icp_signals`, with field paths and
+source URLs, and are explained in the persisted scoring evaluations. They never
+populate `industry`, `employee_count`, `annual_revenue`, `business_model`,
+`company_type`, or `has_defined_software_need`. Existing qualification requirements
+still apply: strong inferred fit with missing size/revenue remains review. The
+inference layer creates no outreach evidence and cannot override a hard stop.
+For the supplied sparse profiles, OpenRouter/Taskade score 70, SecureStrux 60,
+and Gaia Real Estate 55; all remain review until required facts are verified.

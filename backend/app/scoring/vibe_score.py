@@ -2,6 +2,7 @@
 from typing import Any
 
 from app.schemas.icp import RuleEvaluation
+from app.services.vibe_signals import InferredIcpSignals, infer_icp_signals, prepare_vibe_prospect
 from app.services.vibe_prefilter import (
     INDUSTRIES, TITLES, country_name, matches, weak_company_url,
 )
@@ -17,7 +18,11 @@ def numeric_value(value: Any) -> float | None:
         return None
 
 
-def discovery_evaluations(prospect: dict[str, Any], hard_stops: list[str]) -> list[RuleEvaluation]:
+def discovery_evaluations(
+    prospect: dict[str, Any], hard_stops: list[str], signals: InferredIcpSignals | None = None,
+) -> list[RuleEvaluation]:
+    prospect = prepare_vibe_prospect(prospect)
+    signals = signals or infer_icp_signals(prospect)
     company_signals = ' '.join(str(prospect.get(key) or '') for key in (
         'industry', 'business_model', 'company_description', 'description',
     ))
@@ -54,9 +59,24 @@ def discovery_evaluations(prospect: dict[str, Any], hard_stops: list[str]) -> li
         if hard_stops:
             outcome = 'failed'
             explanation = 'No fit points awarded: deterministic hard-stop exclusions apply.'
+        awarded = weight if matched and not hard_stops else 0
+        inferred_points = {
+            'industry_fit': signals.industry_points,
+            'business_model_fit': signals.software_points,
+        }.get(key, 0)
+        if inferred_points and not hard_stops and not matched:
+            awarded = min(weight, inferred_points)
+            outcome = 'matched'
+            explanation = (
+                'Inferred ICP industry/product fit: ' if key == 'industry_fit'
+                else 'B2B/software need inferred from company/product signals: '
+            ) + '; '.join(signals.industries)
+            explanation += '. Hypothesis only; not a verified company fact. Sources: ' + ', '.join(
+                dict.fromkeys(item['field'] for item in signals.sources)
+            )
         evaluations.append(RuleEvaluation(
             rule_key=key, label=label, outcome=outcome,
-            points_awarded=weight if matched and not hard_stops else 0,
+            points_awarded=awarded,
             points_available=weight, explanation=explanation,
         ))
     return evaluations

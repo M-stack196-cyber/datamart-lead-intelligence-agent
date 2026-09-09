@@ -8,6 +8,7 @@ from app.schemas.icp import LeadProfile, ScoreResult
 from app.scoring.icp_engine import IcpScoringEngine
 from app.scoring.vibe_score import discovery_evaluations
 from app.services.vibe_prefilter import prefilter_prospect, country_name
+from app.services.vibe_signals import infer_icp_signals, prepare_vibe_prospect
 
 
 @dataclass(frozen=True)
@@ -161,6 +162,7 @@ def _pipeline_status(
 def score_prospect(
     prospect: dict[str, Any],
 ) -> ScoredProspect:
+    prospect = prepare_vibe_prospect(prospect)
     icp = icp_repository.get_active()
 
     engine = IcpScoringEngine(icp)
@@ -172,15 +174,51 @@ def score_prospect(
     score = engine.score(profile)
     admission = prefilter_prospect(prospect)
     hard_stops = list(dict.fromkeys(score.hard_stops + admission.rejection_reasons))
-    evaluations = discovery_evaluations(prospect, hard_stops)
+    signals = infer_icp_signals(prospect)
+    # Persist hypotheses separately from measured provider attributes. The
+    # existing raw payload and evaluation JSON keep their provenance available.
+    prospect = {**prospect, 'inferred_icp_signals': signals.payload()}
+    evaluations = discovery_evaluations(prospect, hard_stops, signals)
     score = score.model_copy(update={
         "score": sum(item.points_awarded for item in evaluations),
         "evaluations": evaluations,
+        "evidence_urls": engine._normalized_evidence_urls(
+            score.evidence_urls + [item["source_url"] for item in signals.sources]
+        ),
     })
     if hard_stops:
         score = score.model_copy(update={"disposition": "Disqualified", "hard_stops": hard_stops})
     elif admission.review_reasons:
-        score = score.model_copy(update={"disposition": "Review", "review_reasons": admission.review_reasons})
+        review_reasons = admission.review_reasons
+        if signals.industries:
+            review_reasons = [
+                'Inferred ICP industry: ' + '; '.join(signals.industries),
+                'Strong decision-maker fit',
+            ]
+            missing_size_revenue = (
+                _as_int(prospect.get('employee_count')) is None
+                or _as_int(prospect.get('annual_revenue')) is None
+            )
+            if missing_size_revenue:
+                review_reasons.append('Company size/revenue missing; manual verification required')
+            if signals.software_points:
+                review_reasons.append('B2B/software need inferred from company/product signals')
+                if missing_size_revenue and country_name(prospect.get('country')).casefold() in {
+                    'united states', 'united arab emirates',
+                }:
+                    review_reasons.append('Strong ICP signals but company size/revenue require verification.')
+            replaced = {
+                'Missing company size/revenue/industry data',
+                'Good decision-maker title but sparse company data',
+                'Needs manual verification against Datamart ICP',
+            }
+            if signals.software_points:
+                replaced.update({
+                    'B2B business model requires verification',
+                    'Software or engineering need requires verification',
+                })
+            review_reasons.extend(reason for reason in admission.review_reasons if reason not in replaced)
+        score = score.model_copy(update={"disposition": "Review", "review_reasons": review_reasons})
     else:
         score = score.model_copy(update={"disposition": "Strong Fit" if score.score >= 80 else "Good Fit"})
 
