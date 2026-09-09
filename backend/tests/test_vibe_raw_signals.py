@@ -180,3 +180,26 @@ def test_bare_provider_domain_has_direct_hypothesis_source_link():
     assert 'https://taskade.com' in result.score.evidence_urls
     assert all(item['source_url'] == 'https://taskade.com'
                for item in result.prospect['inferred_icp_signals']['sources'])
+
+def test_latest_production_domains_infer_icp_signals():
+    from app.services.vibe_signals import infer_icp_signals
+
+    examples = [
+        ("Mem0", "mem0.ai", "Co-founder and chief technology officer", "SaaS/AI software"),
+        ("Julius AI", "julius.ai", "Founder and chief executive officer", "SaaS/AI software"),
+        ("B2metric", "b2metric.com", "Chief executive officer & co-founder of b2metric | predictive cdp", "Analytics/MarTech/data platform"),
+        ("Hello Patient", "hellopatient.com", "Co-founder & chief executive officer", "HealthTech"),
+        ("Fintech Americas", "fintechamericas.co", "Founder and chief executive officer", "FinTech/financial software"),
+        ("Fuelfinance", "fuelfinance.me", "Founder & chief executive officer", "FinTech/financial software"),
+    ]
+
+    for company_name, company_url, title, expected_signal in examples:
+        signals = infer_icp_signals({
+            "company_name": company_name,
+            "company_url": company_url,
+            "title": title,
+            "country": "united states",
+        })
+
+        assert expected_signal in signals.industries
+        assert signals.industry_points > 0

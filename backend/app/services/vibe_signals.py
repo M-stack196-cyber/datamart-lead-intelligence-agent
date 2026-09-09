@@ -18,6 +18,18 @@ DOMAIN_HINTS = {
     'pocketpatientmd.com': ('HealthTech', 20, 10),
     'plannerly.com': ('Construction/BIM software', 20, 10),
     'experfy.com': ('Analytics/AI/talent platform', 20, 5),
+
+    # Latest production examples from Vibe discovery.
+    # These are still hypotheses only; they do not prove size, revenue, ownership, or qualification.
+    'mem0.ai': ('SaaS/AI software', 20, 10),
+    'julius.ai': ('SaaS/AI software', 20, 10),
+    'b2metric.com': ('Analytics/MarTech/data platform', 20, 10),
+    'hellopatient.com': ('HealthTech', 20, 10),
+    'fintechamericas.co': ('FinTech/financial software', 20, 5),
+    'fuelfinance.me': ('FinTech/financial software', 20, 5),
+    'pocus.com': ('Analytics/MarTech/data platform', 20, 10),
+    'corvee.com': ('FinTech/financial software', 15, 5),
+    'itracusa.com': ('SaaS/software platform', 15, 5),
 }
 CATEGORY_TERMS = (
     ('HealthTech', ('healthtech', 'healthcare software', 'patient platform', 'clinical software', 'electronic health records')),
@@ -31,6 +43,27 @@ CATEGORY_TERMS = (
 )
 SOFTWARE_TERMS = ('saas', 'software', 'artificial intelligence', 'ai', 'cloud', 'bim',
                   'platform', 'data engineering', 'cybersecurity', 'healthtech', 'fintech', 'proptech')
+
+GENERIC_DOMAIN_HINTS = (
+    ('SaaS/AI software',
+     ('ai', 'cloud', 'automation', 'platform', 'software', 'app', 'apps', 'tech', 'labs'),
+     20, 10),
+    ('FinTech/financial software',
+     ('fintech', 'finance', 'wealth', 'pay', 'payments', 'bank', 'tax', 'accounting', 'invoice', 'billing'),
+     20, 5),
+    ('HealthTech',
+     ('patient', 'health', 'healthcare', 'care', 'clinic', 'medical', 'med', 'md', 'pharma'),
+     20, 10),
+    ('Analytics/MarTech/data platform',
+     ('metric', 'analytics', 'data', 'cdp', 'insight', 'predictive', 'intelligence', 'pocus'),
+     20, 10),
+    ('MarTech/SaaS',
+     ('crm', 'sales', 'growth', 'marketing automation', 'customer success', 'customer'),
+     15, 5),
+    ('Real Estate / PropTech potential',
+     ('real estate', 'property', 'proptech', 'realtor', 'brokerage'),
+     15, 0),
+)
 
 
 def _matches(text: str, terms: tuple[str, ...]) -> bool:
@@ -121,6 +154,18 @@ def infer_icp_signals(prospect: dict[str, Any]) -> InferredIcpSignals:
     for domain, (category, points, software) in DOMAIN_HINTS.items():
         if host == domain or host.endswith('.' + domain):
             record('company_url (user-supplied domain hypothesis)', category, points, software)
+
+    # Conservative broad inference from current company name and title.
+    # Do not infer from a bare .ai TLD, URL path, or spoofed host like openrouter.ai.evil.example.
+    # Fixed known domains are handled by DOMAIN_HINTS above.
+    broad_signal_text = ' '.join([
+        str(prospect.get('company_name') or ''),
+        str(prospect.get('title') or ''),
+    ]).casefold()
+
+    for category, terms, points, software in GENERIC_DOMAIN_HINTS:
+        if _matches(broad_signal_text, terms):
+            record('company_name/title hypothesis', category, points, software)
 
     company_context: list[tuple[str, str]] = []
     personal_context: list[tuple[str, str]] = []
