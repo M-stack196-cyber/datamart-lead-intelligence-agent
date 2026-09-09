@@ -101,16 +101,15 @@ class VibeEventsClient:
 
         payload: dict[str, Any] = {
             "business_ids": ids,
+            "request_context": None,
+            "entity_type": "business",
+            "timestamp_to": None,
+            "timestamp_from": timestamp_from,
         }
 
         if event_types:
             payload["event_types"] = (
                 event_types
-            )
-
-        if timestamp_from:
-            payload["timestamp_from"] = (
-                timestamp_from
             )
 
         response = httpx.post(
@@ -123,7 +122,14 @@ class VibeEventsClient:
             timeout=30.0,
         )
 
-        response.raise_for_status()
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            detail = response.text[:1000]
+            raise RuntimeError(
+                "Explorium business events request failed "
+                f"with status {response.status_code}: {detail}"
+            ) from exc
 
         body = response.json()
 

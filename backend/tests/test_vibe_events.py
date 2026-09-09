@@ -65,6 +65,15 @@ def test_fetch_business_events(mock_post):
 
     mock_post.assert_called_once()
 
+    called_payload = mock_post.call_args.kwargs["json"]
+
+    assert called_payload["business_ids"] == ["business-1"]
+    assert called_payload["event_types"] == ["new_funding_round"]
+    assert called_payload["timestamp_from"] == "2026-08-01"
+    assert called_payload["timestamp_to"] is None
+    assert called_payload["entity_type"] == "business"
+    assert called_payload["request_context"] is None
+
 
 def test_business_event_limit():
     client = VibeEventsClient(
