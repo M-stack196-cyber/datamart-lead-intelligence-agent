@@ -23,7 +23,9 @@ from app.schemas.outreach import (
 )
 from app.integrations.gmail import GmailClient, GmailDeliveryError
 from app.integrations.outbound import InboundReplyRequest
+from app.lead_sources import ApolloLeadSourceProvider, ProviderAuthError
 from app.services.email_delivery import EmailDeliveryService
+from app.services.lead_source_ingestion import prepare_and_score_leads
 from app.services.outreach import OutreachDraftEngine, validate_outreach_for_approval
 from app.services.outreach_generation import (
     generate_outreach_message,
@@ -59,6 +61,23 @@ from app.services.outreach_analytics import (
 from app.services.vibe_discovery_cycle import approved_daily_limit, run_vibe_discovery_cycle
 
 router = APIRouter()
+
+
+def _require_cron_secret(settings: Settings, authorization: str | None) -> None:
+    if not settings.cron_secret:
+        raise HTTPException(
+            status_code=503,
+            detail="Cron authentication is not configured",
+        )
+
+    expected = f"Bearer {settings.cron_secret}"
+
+    if authorization is None or not compare_digest(authorization, expected):
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized",
+        )
+
 
 def _backend_client(settings: Settings):
     if not settings.supabase_url or not settings.supabase_service_role_key:
@@ -963,20 +982,7 @@ async def run_internal_vibe_discovery_cycle(
     limit: int | None = Query(default=None, ge=1),
 ):
     settings = get_settings()
-
-    if not settings.cron_secret:
-        raise HTTPException(
-            status_code=503,
-            detail="Cron authentication is not configured",
-        )
-
-    expected = f"Bearer {settings.cron_secret}"
-
-    if authorization is None or not compare_digest(authorization, expected):
-        raise HTTPException(
-            status_code=401,
-            detail="Unauthorized",
-        )
+    _require_cron_secret(settings, authorization)
 
     if (
         not settings.supabase_url
@@ -1033,6 +1039,44 @@ async def run_internal_vibe_discovery_cycle(
         "rejected_count": result.rejected_count,
         "evidence_count": result.evidence_count,
         "draft_count": result.draft_count,
+        "errors": result.errors,
+        "warnings": result.warnings,
+    }
+
+
+@router.get("/internal/lead-sources/apollo/discovery-cycle")
+async def run_internal_apollo_discovery_cycle(
+    authorization: str | None = Header(default=None),
+    limit: int = Query(default=100, ge=1, le=100),
+):
+    settings = get_settings()
+    _require_cron_secret(settings, authorization)
+
+    try:
+        leads = ApolloLeadSourceProvider(settings=settings).fetch_leads(limit)
+        result = prepare_and_score_leads(leads)
+    except ProviderAuthError as exc:
+        status_code = 503 if "not configured" in str(exc) else 502
+        raise HTTPException(status_code=status_code, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Unable to complete the Apollo discovery cycle",
+        ) from exc
+
+    return {
+        "status": "completed_with_errors" if result.errors else "completed",
+        "requested_limit": limit,
+        "fetched_count": len(leads),
+        "prepared_count": result.prepared_count,
+        "duplicate_count": result.duplicate_count,
+        "qualified_count": result.qualified_count,
+        "review_count": result.review_count,
+        "rejected_count": result.rejected_count,
         "errors": result.errors,
         "warnings": result.warnings,
     }

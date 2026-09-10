@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     vibe_approved_job_limit: int = Field(default=1, ge=1, le=100)
     daily_vibe_lead_limit: int = Field(default=100, ge=1, le=10_000)
     vibe_allow_over_daily_cap: bool = False
+    apollo_api_key: str | None = None
+    apollo_base_url: str = "https://api.apollo.io"
     cron_secret: str | None = None
     aws_bearer_token_bedrock: str | None = None
     aws_region: str = "us-east-1"
@@ -81,6 +83,7 @@ class Settings(BaseSettings):
     def integration_status(self) -> dict[str, bool]:
         return {
             "vibe": bool(self.vibe_api_key and self.vibe_enrichment_enabled),
+            "apollo": bool(self.apollo_api_key),
             "bedrock": bool(self.aws_bearer_token_bedrock and self.bedrock_model_id),
             "outbound": bool(
                 self.outbound_email_provider

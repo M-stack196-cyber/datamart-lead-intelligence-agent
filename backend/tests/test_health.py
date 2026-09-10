@@ -23,6 +23,7 @@ async def test_health_check_returns_healthy_status() -> None:
     assert set(payload["integrations_configured"]) == {
         "outbound",
         "vibe",
+        "apollo",
         "bedrock",
         "gmail",
         "supabase",
