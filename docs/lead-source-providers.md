@@ -50,9 +50,26 @@ source .venv/bin/activate
 PYTHONPATH=. python scripts/import_apollo_csv.py --file /path/to/apollo.csv --dry-run
 ```
 
-Non-dry-run database persistence is intentionally disabled until there is a generic provider persistence service. The current durable discovery persistence path is Vibe-specific and should not be reused for CSV rows without an explicit generic contract.
+Persist a local CSV into Supabase after reviewing the dry-run output:
+
+```bash
+cd backend
+source .venv/bin/activate
+PYTHONPATH=. python scripts/import_apollo_csv.py --file /path/to/apollo.csv
+```
+
+Required backend env vars for persistence:
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+Generic imports use the backend service-role client only. The service role key must stay in backend-only ignored environment files and must never be exposed to the frontend.
+
+Generic persistence stores Apollo CSV rows in `leads`, writes the current ICP result to `lead_scores`, tracks `lead_source`, `source_id`, `source_captured_at`, and preserves the full Apollo row in `raw_source_data`. It deduplicates by email, LinkedIn URL, source plus source ID, and company URL plus person name. The current durable Vibe discovery RPC remains Vibe-specific and is not reused for CSV imports.
 
 The CSV path is temporary. Production discovery should use an approved API provider such as Apollo paid, Clay, Seamless, Vibe, or a similar provider. CSV import does not send emails, LinkedIn messages, or Apollo sequences; outreach remains human-approved.
+
+Outreach draft generation is deferred for generic CSV imports. The current safe draft generation path requires stored evidence and sales approval, so CSV persistence stops at reviewable leads and ICP scores until generic evidence capture is added.
 
 ## Seamless Placeholder
 
@@ -67,6 +84,7 @@ cd backend
 source .venv/bin/activate
 PYTHONPATH=. pytest tests/test_apollo_provider.py tests/test_apollo_lead_scoring.py -q
 PYTHONPATH=. pytest tests/test_apollo_csv_provider.py tests/test_apollo_csv_import_scoring.py -q
+PYTHONPATH=. pytest tests/test_lead_source_persistence.py tests/test_apollo_csv_import_persistence.py -q
 PYTHONPATH=. pytest tests -k "apollo or vibe" -q
 PYTHONPATH=. pytest tests -k "vibe" -q
 ```
