@@ -38,6 +38,22 @@ Authorization: Bearer $CRON_SECRET
 
 The endpoint fetches, normalizes, deduplicates, and scores Apollo leads. It currently returns `prepared_count` instead of `stored_count` because the existing durable discovery persistence path is Vibe-specific.
 
+## Apollo CSV Temporary Testing Provider
+
+Apollo CSV import exists as a temporary testing source because Apollo free/trial access does not provide the API/export workflow needed for normal automated discovery. A manually saved Apollo CSV batch can be normalized into `NormalizedLead` rows and scored through the same Datamart ICP pipeline as the API providers.
+
+Dry-run a local CSV:
+
+```bash
+cd backend
+source .venv/bin/activate
+PYTHONPATH=. python scripts/import_apollo_csv.py --file /path/to/apollo.csv --dry-run
+```
+
+Non-dry-run database persistence is intentionally disabled until there is a generic provider persistence service. The current durable discovery persistence path is Vibe-specific and should not be reused for CSV rows without an explicit generic contract.
+
+The CSV path is temporary. Production discovery should use an approved API provider such as Apollo paid, Clay, Seamless, Vibe, or a similar provider. CSV import does not send emails, LinkedIn messages, or Apollo sequences; outreach remains human-approved.
+
 ## Seamless Placeholder
 
 Seamless, Apollo enrichment, and other future sources should implement `LeadSourceProvider` and return `NormalizedLead` rows. Provider-specific API response quirks should stay inside each adapter so scoring, dedupe, and human-approved outreach can remain source-agnostic.
@@ -50,6 +66,7 @@ Apollo tests use mocked HTTP responses and do not require API credits:
 cd backend
 source .venv/bin/activate
 PYTHONPATH=. pytest tests/test_apollo_provider.py tests/test_apollo_lead_scoring.py -q
+PYTHONPATH=. pytest tests/test_apollo_csv_provider.py tests/test_apollo_csv_import_scoring.py -q
 PYTHONPATH=. pytest tests -k "apollo or vibe" -q
 PYTHONPATH=. pytest tests -k "vibe" -q
 ```
