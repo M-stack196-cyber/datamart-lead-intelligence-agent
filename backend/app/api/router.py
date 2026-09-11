@@ -1,6 +1,6 @@
 from secrets import compare_digest
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from supabase import create_client
 
 from app.api.auth import CurrentUser, require_roles, require_user
@@ -68,6 +68,7 @@ from app.services.next_followup_drafts import (
     create_next_followup_draft,
     mark_draft_manually_sent,
 )
+from app.services.lead_backup_export import build_lead_backup_csv, build_lead_backup_preview
 
 from app.services.vibe_discovery_cycle import approved_daily_limit, run_vibe_discovery_cycle
 
@@ -365,6 +366,37 @@ def _create_next_followup(
     }
 
 
+def _lead_backup_export(
+    settings: Settings,
+    *,
+    source: str | None,
+    status: str | None,
+    limit: int,
+) -> tuple[str, str, str]:
+    export = build_lead_backup_csv(
+        _backend_client(settings),
+        source=source,
+        status=status,
+        limit=limit,
+    )
+    return export.content, export.filename, export.content_type
+
+
+def _lead_backup_preview(
+    settings: Settings,
+    *,
+    source: str | None,
+    status: str | None,
+    limit: int,
+) -> dict:
+    return build_lead_backup_preview(
+        _backend_client(settings),
+        source=source,
+        status=status,
+        limit=limit,
+    )
+
+
 @router.get("/health", response_model=HealthResponse, tags=["system"])
 async def health_check() -> HealthResponse:
     """Report process health and non-secret integration readiness."""
@@ -456,6 +488,60 @@ async def lead_review_workspace(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail="Unable to load review workspace") from exc
+
+
+@router.get("/leads/backup-export", tags=["leads"])
+async def lead_backup_export(
+    source: str | None = Query(default=None, max_length=100),
+    status: str | None = Query(default=None, max_length=50),
+    limit: int = Query(default=1000, ge=1, le=5000),
+    format: str = Query(default="csv", pattern="^csv$"),
+    _user: CurrentUser = Depends(require_roles("admin", "manager")),
+) -> Response:
+    """Download a CSV backup of lead, scoring, draft, send, and reply history."""
+    if format != "csv":
+        raise HTTPException(status_code=400, detail="Only csv export is supported")
+    try:
+        content, filename, content_type = _lead_backup_export(
+            get_settings(),
+            source=source,
+            status=status,
+            limit=limit,
+        )
+        return Response(
+            content=content,
+            media_type=content_type,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Unable to generate lead backup export") from exc
+
+
+@router.get("/leads/backup-preview", tags=["leads"])
+async def lead_backup_preview(
+    source: str | None = Query(default=None, max_length=100),
+    status: str | None = Query(default=None, max_length=50),
+    limit: int = Query(default=1000, ge=1, le=5000),
+    _user: CurrentUser = Depends(require_roles("admin", "manager")),
+) -> dict:
+    """Return a reviewable JSON preview of the lead backup without full draft bodies."""
+    try:
+        return _lead_backup_preview(
+            get_settings(),
+            source=source,
+            status=status,
+            limit=limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Unable to generate lead backup preview") from exc
 
 
 @router.get("/outreach", tags=["outreach"])
