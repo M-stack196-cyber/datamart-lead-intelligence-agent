@@ -69,7 +69,7 @@ Generic persistence stores Apollo CSV rows in `leads`, writes the current ICP re
 
 The CSV path is temporary. Production discovery should use an approved API provider such as Apollo paid, Clay, Seamless, Vibe, or a similar provider. CSV import does not send emails, LinkedIn messages, or Apollo sequences; outreach remains human-approved.
 
-Evidence-grounded automatic outreach and follow-up sequencing remain deferred for generic CSV imports until generic evidence capture is added. The primary draft generator below creates review-only drafts from stored lead fields and ICP review context.
+Evidence-grounded automatic outreach remains deferred for generic CSV imports until generic evidence capture is added. The draft generators below create review-only primary and follow-up drafts from stored lead fields and ICP review context.
 
 ## Generating Review-Only Primary Drafts
 
@@ -91,7 +91,43 @@ source .venv/bin/activate
 PYTHONPATH=. python scripts/generate_primary_drafts.py --source apollo_csv --limit 25
 ```
 
-The generator considers only `status = review` leads for the requested `lead_source`, skips any lead/channel pair that already has a step-one draft, and creates at most one email draft and one LinkedIn draft per eligible lead. Follow-up draft sequencing remains a later phase and must stay approval-gated.
+The generator considers only `status = review` leads for the requested `lead_source`, skips any lead/channel pair that already has a step-one draft, and creates at most one email draft and one LinkedIn draft per eligible lead. Follow-up draft sequencing uses the draft-only flow below and must stay approval-gated.
+
+## Follow-Up Draft Sequence
+
+Generic lead sources can also generate draft-only follow-ups after primary drafts exist. Sequence steps map as:
+
+- `sequence_step = 1`: primary draft
+- `sequence_step = 2`: follow-up 1
+- `sequence_step = 3`: follow-up 2
+- `sequence_step = 4`: follow-up 3
+
+Preview follow-up 1:
+
+```bash
+cd backend
+source .venv/bin/activate
+PYTHONPATH=. python scripts/generate_followup_drafts.py --source apollo_csv --limit 25 --step 2 --dry-run
+```
+
+Create follow-up 1 drafts:
+
+```bash
+cd backend
+source .venv/bin/activate
+PYTHONPATH=. python scripts/generate_followup_drafts.py --source apollo_csv --limit 25 --step 2
+```
+
+Preview later follow-ups:
+
+```bash
+cd backend
+source .venv/bin/activate
+PYTHONPATH=. python scripts/generate_followup_drafts.py --source apollo_csv --limit 25 --step 3 --dry-run
+PYTHONPATH=. python scripts/generate_followup_drafts.py --source apollo_csv --limit 25 --step 4 --dry-run
+```
+
+Follow-ups are stored only as `draft` rows in `outreach_drafts`. No message is sent automatically, no Gmail or LinkedIn delivery is called, and admin/sales approval remains required before any send. The team can decide later whether email or LinkedIn is the right channel for each lead.
 
 ## Seamless Placeholder
 
@@ -108,6 +144,7 @@ PYTHONPATH=. pytest tests/test_apollo_provider.py tests/test_apollo_lead_scoring
 PYTHONPATH=. pytest tests/test_apollo_csv_provider.py tests/test_apollo_csv_import_scoring.py -q
 PYTHONPATH=. pytest tests/test_lead_source_persistence.py tests/test_apollo_csv_import_persistence.py -q
 PYTHONPATH=. pytest tests/test_generic_outreach_drafts.py tests/test_generate_primary_drafts_script.py -q
+PYTHONPATH=. pytest tests/test_generic_followup_drafts.py tests/test_generate_followup_drafts_script.py -q
 PYTHONPATH=. pytest tests -k "apollo or vibe" -q
 PYTHONPATH=. pytest tests -k "vibe" -q
 ```
