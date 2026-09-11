@@ -17,7 +17,7 @@ def result(**overrides):
                 lead_id="lead-1",
                 channel="email",
                 subject="Quick question about Metric AI",
-                body="Hi Maya, review-only draft",
+                body="Hi Maya, prospect-facing draft",
             )
         ],
     }

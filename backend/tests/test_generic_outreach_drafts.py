@@ -140,7 +140,7 @@ def test_existing_primary_draft_prevents_duplicate_channel():
     assert client.inserts["outreach_drafts"][0]["channel"] == "linkedin"
 
 
-def test_email_and_linkedin_content_are_review_only_and_pending_review():
+def test_email_and_linkedin_content_are_prospect_facing_and_pending_review():
     client = FakeClient()
 
     result = generate_primary_drafts_for_review_leads(client, dry_run=False)
@@ -154,10 +154,11 @@ def test_email_and_linkedin_content_are_review_only_and_pending_review():
     assert email["sequence_step"] == 1
     assert "Maya" in email["body"]
     assert "Metric AI" in email["body"]
-    assert "Datamart helps teams with custom software development" in email["body"]
+    assert "review-only note" not in email["body"]
+    assert "review-only note" not in linkedin["body"]
+    assert "Datamart helps teams with AI agents" in email["body"]
     assert "AI agents" in email["body"]
     assert "Would it be worth a quick 10-minute conversation?" in email["body"]
-    assert "Review note" in email["body"]
     assert len(linkedin["body"]) < len(email["body"])
     assert "Datamart works on AI agents" in linkedin["body"]
     assert result.previews[0].body

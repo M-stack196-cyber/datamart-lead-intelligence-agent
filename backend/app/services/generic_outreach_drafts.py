@@ -207,21 +207,17 @@ def _email_body(lead: dict[str, Any], score: dict[str, Any]) -> str:
     lines = [
         f"Hi {person},",
         "",
-        f"I’m reaching out with a review-only note for {company}"
+        f"I’m reaching out because {company}"
         + (f" ({domain})" if domain else "")
-        + f" after seeing your role as {title}.",
+        + f" looks relevant to the kind of work Datamart supports, and I saw your role as {title}.",
         context,
         "",
-        "Datamart helps teams with custom software development, AI agents, "
-        "CRM/workflow automation, SaaS/backend engineering, and offshore "
-        "engineering capacity.",
+        "Datamart helps teams with AI agents and CRM/workflow automation when they need practical engineering capacity.",
         "",
         "Would it be worth a quick 10-minute conversation?",
         "",
         "Best,",
         "Datamart",
-        "",
-        "Review note: this draft must be checked and approved before any message is sent.",
     ]
     return "\n".join(lines)
 
@@ -233,7 +229,7 @@ def _linkedin_body(lead: dict[str, Any], score: dict[str, Any]) -> str:
     return (
         f"Hi {person}, noticed {company} looks relevant to {focus}. "
         "Datamart works on AI agents and workflow/software automation. "
-        "Would it be okay to send a brief idea for review?"
+        "Would it be okay to send one brief idea?"
     )
 
 
