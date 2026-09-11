@@ -13,6 +13,7 @@ from app.schemas.intake import LeadIntakeBatch, LeadIntakeValidation
 from app.services.approval import ApprovalDecision, ApprovalEngine
 from app.schemas.outreach import (
     CrmSyncRequest,
+    DraftStatusReviewRequest,
     GenerateOutreachRequest,
     IngestInboundReplyRequest,
     PauseSequenceRequest,
@@ -56,6 +57,10 @@ from app.services.crm_handoff import (
 from app.services.outreach_analytics import (
     get_lead_outreach_analytics,
     get_lead_outreach_timeline,
+)
+from app.services.review_workspace import (
+    review_outreach_draft_status,
+    review_workspace_leads,
 )
 
 from app.services.vibe_discovery_cycle import approved_daily_limit, run_vibe_discovery_cycle
@@ -271,6 +276,46 @@ def _send_approved_email(settings: Settings, actor_id: str, draft_id: str) -> di
     }
 
 
+def _review_workspace_payload(
+    settings: Settings,
+    *,
+    source: str,
+    status: str,
+    limit: int,
+    include_drafts: bool,
+) -> dict:
+    client = _backend_client(settings)
+    result = review_workspace_leads(
+        client,
+        source=source,
+        status=status,
+        limit=limit,
+        include_drafts=include_drafts,
+    )
+    return {
+        "source": result.source,
+        "status": result.status,
+        "limit": result.limit,
+        "leads": result.leads,
+    }
+
+
+def _review_draft_status(
+    settings: Settings,
+    actor_id: str,
+    draft_id: str,
+    request: DraftStatusReviewRequest,
+) -> dict:
+    client = _backend_client(settings)
+    return review_outreach_draft_status(
+        client,
+        draft_id=draft_id,
+        action=request.action,
+        review_notes=request.review_notes,
+        actor_id=actor_id,
+    )
+
+
 @router.get("/health", response_model=HealthResponse, tags=["system"])
 async def health_check() -> HealthResponse:
     """Report process health and non-secret integration readiness."""
@@ -337,6 +382,31 @@ async def decide_lead_approval(
         intent_score=intent_score,
         evidence_urls=evidence_urls,
     )
+
+
+@router.get("/leads/review-workspace", tags=["leads"])
+async def lead_review_workspace(
+    source: str = Query(default="apollo_csv", min_length=1, max_length=100),
+    status: str = Query(default="review", min_length=1, max_length=50),
+    limit: int = Query(default=50, ge=1, le=200),
+    include_drafts: bool = Query(default=True),
+    _user: CurrentUser = Depends(require_roles("admin", "manager", "sales")),
+) -> dict:
+    """Return review leads with latest score and grouped draft sequence state."""
+    try:
+        return _review_workspace_payload(
+            get_settings(),
+            source=source,
+            status=status,
+            limit=limit,
+            include_drafts=include_drafts,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Unable to load review workspace") from exc
 
 
 @router.get("/outreach", tags=["outreach"])
@@ -945,8 +1015,28 @@ async def review_outreach_draft(
 ) -> dict:
     """Approve or reject an exact stored draft through the server-trusted role gate."""
     settings = get_settings()
-    if request.action == "approved" and user.role != "admin":
+    if request.action in {"approve", "approved"} and user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin role required for outreach approval")
+    if request.action == "needs_edit":
+        try:
+            return review_outreach_draft_status(
+                _backend_client(settings),
+                draft_id=draft_id,
+                action="needs_edit",
+                review_notes=request.review_notes,
+                actor_id=user.id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail="Unable to review outreach draft") from exc
+    if request.action in {"approve", "reject"}:
+        request = ReviewOutreachRequest(
+            action={"approve": "approved", "reject": "rejected"}[request.action],
+            review_notes=request.review_notes,
+        )
     try:
         return _review_outreach_draft(settings, user.id, draft_id, request)
     except ValueError as exc:
@@ -955,6 +1045,25 @@ async def review_outreach_draft(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail="Unable to review outreach draft") from exc
+
+
+@router.patch("/outreach-drafts/{draft_id}/review", tags=["outreach"])
+async def review_outreach_draft_status_route(
+    draft_id: str,
+    request: DraftStatusReviewRequest,
+    user: CurrentUser = Depends(require_roles("admin", "manager")),
+) -> dict:
+    """Update a draft review status without sending or invoking delivery providers."""
+    if request.action == "approve" and user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin role required for outreach approval")
+    try:
+        return _review_draft_status(get_settings(), user.id, draft_id, request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Unable to update draft review status") from exc
 
 
 @router.post("/outreach/drafts/{draft_id}/send-email", tags=["outreach"])

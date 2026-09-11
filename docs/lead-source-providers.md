@@ -129,6 +129,17 @@ PYTHONPATH=. python scripts/generate_followup_drafts.py --source apollo_csv --li
 
 Follow-ups are stored only as `draft` rows in `outreach_drafts`. No message is sent automatically, no Gmail or LinkedIn delivery is called, and admin/sales approval remains required before any send. The team can decide later whether email or LinkedIn is the right channel for each lead.
 
+## Review Dashboard
+
+The dashboard `/review` page loads generic lead-source review rows through the backend review workspace API, groups email and LinkedIn drafts by sequence step 1 through 4, and lets admins/managers mark draft status as approved, rejected, or needs edit. These review actions only update draft review fields; they do not send email, copy LinkedIn messages, call Gmail delivery, or call Apollo sequences.
+
+API endpoints:
+
+- `GET /leads/review-workspace?source=apollo_csv&status=review&limit=50&include_drafts=true`
+- `PATCH /outreach-drafts/{draft_id}/review`
+
+TODO: Extend the existing export workspace with a CSV that includes lead fields, score/review reasons, and each draft subject/body/status by channel and sequence step. Existing exports are unchanged for now.
+
 ## Seamless Placeholder
 
 Seamless, Apollo enrichment, and other future sources should implement `LeadSourceProvider` and return `NormalizedLead` rows. Provider-specific API response quirks should stay inside each adapter so scoring, dedupe, and human-approved outreach can remain source-agnostic.

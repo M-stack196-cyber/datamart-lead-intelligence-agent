@@ -10,7 +10,12 @@ class GenerateOutreachRequest(BaseModel):
 
 
 class ReviewOutreachRequest(BaseModel):
-    action: Literal["approved", "rejected"]
+    action: Literal["approved", "rejected", "approve", "reject", "needs_edit"]
+    review_notes: str = Field(min_length=1, max_length=2000)
+
+
+class DraftStatusReviewRequest(BaseModel):
+    action: Literal["approve", "reject", "needs_edit"]
     review_notes: str = Field(min_length=1, max_length=2000)
 
 
@@ -50,4 +55,3 @@ class IngestInboundReplyRequest(BaseModel):
 class CrmSyncRequest(BaseModel):
     provider_key: str = Field(min_length=1, max_length=100)
     mapping: dict[str, object] = Field(default_factory=dict)
-
