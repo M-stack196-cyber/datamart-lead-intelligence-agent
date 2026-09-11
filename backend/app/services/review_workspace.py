@@ -44,6 +44,7 @@ def review_workspace_leads(
 
     scores = _latest_scores_by_lead(client, lead_ids)
     drafts = _drafts_by_lead(client, lead_ids) if include_drafts else {}
+    replied_lead_ids = _replied_lead_ids(client, lead_ids)
 
     return ReviewWorkspaceResult(
         source=source,
@@ -53,6 +54,7 @@ def review_workspace_leads(
             {
                 **lead,
                 "latest_score": scores.get(str(lead.get("id"))) or None,
+                "has_replies": str(lead.get("id")) in replied_lead_ids,
                 "outreach_drafts": _group_drafts(drafts.get(str(lead.get("id")), [])),
             }
             for lead in leads
@@ -145,6 +147,23 @@ def _drafts_by_lead(client: Any, lead_ids: list[str]) -> dict[str, list[dict[str
         if isinstance(row, dict) and row.get("lead_id"):
             drafts.setdefault(str(row["lead_id"]), []).append(row)
     return drafts
+
+
+def _replied_lead_ids(client: Any, lead_ids: list[str]) -> set[str]:
+    if not lead_ids:
+        return set()
+    try:
+        rows = (
+            client.table("inbound_reply_events")
+            .select("lead_id")
+            .in_("lead_id", lead_ids)
+            .execute()
+            .data
+            or []
+        )
+    except Exception:
+        return set()
+    return {str(row.get("lead_id")) for row in rows if isinstance(row, dict) and row.get("lead_id")}
 
 
 def _group_drafts(rows: list[dict[str, Any]]) -> dict[str, dict[str, dict[str, Any] | None]]:

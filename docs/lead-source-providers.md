@@ -95,14 +95,23 @@ The generator considers only `status = review` leads for the requested `lead_sou
 
 ## Follow-Up Draft Sequence
 
-Generic lead sources can also generate draft-only follow-ups after primary drafts exist. Sequence steps map as:
+Generic lead sources can also generate draft-only follow-ups after primary drafts exist. Follow-ups should be created one step at a time after the previous step has been reviewed/sent-like and only when no inbound reply has been recorded. Sequence steps map as:
 
 - `sequence_step = 1`: primary draft
 - `sequence_step = 2`: follow-up 1
 - `sequence_step = 3`: follow-up 2
 - `sequence_step = 4`: follow-up 3
 
-Preview follow-up 1:
+The dashboard review workflow uses:
+
+- `PATCH /outreach-drafts/{draft_id}/manual-send`
+- `POST /leads/{lead_id}/outreach/next-followup-draft`
+
+Manual-send records that a team member sent the draft outside the system. The current schema has no `sent` draft status, so it uses the existing approved/sent-like draft state plus review notes and audit metadata. The next-follow-up endpoint checks `inbound_reply_events` and returns `lead_replied` instead of creating a draft when a reply exists.
+
+The older CLI follow-up generator is retained for maintenance and testing, but it now also requires the previous channel step to be approved/sent-like. It should not be used to pre-create all follow-ups at once.
+
+Preview follow-up 1 for eligible leads only:
 
 ```bash
 cd backend
@@ -128,6 +137,19 @@ PYTHONPATH=. python scripts/generate_followup_drafts.py --source apollo_csv --li
 ```
 
 Follow-ups are stored only as `draft` rows in `outreach_drafts`. No message is sent automatically, no Gmail or LinkedIn delivery is called, and admin/sales approval remains required before any send. The team can decide later whether email or LinkedIn is the right channel for each lead.
+
+Safe maintenance scripts for existing test data:
+
+```bash
+cd backend
+source .venv/bin/activate
+PYTHONPATH=. python scripts/archive_precreated_followup_drafts.py --source apollo_csv
+PYTHONPATH=. python scripts/archive_precreated_followup_drafts.py --source apollo_csv --execute
+PYTHONPATH=. python scripts/refresh_primary_drafts.py --source apollo_csv
+PYTHONPATH=. python scripts/refresh_primary_drafts.py --source apollo_csv --execute
+```
+
+Both scripts default to dry-run. The archive script does not delete rows; because the current `outreach_status` enum only supports `draft`, `approved`, and `rejected`, it archives unsafe pre-created follow-ups by setting eligible draft rows to `rejected`.
 
 ## Review Dashboard
 

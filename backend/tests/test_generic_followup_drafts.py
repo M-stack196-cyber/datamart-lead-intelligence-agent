@@ -120,8 +120,8 @@ def add_previous(client, *, step=1, channel="email", status="draft"):
 
 
 def add_primary_pair(client):
-    add_previous(client, step=1, channel="email")
-    add_previous(client, step=1, channel="linkedin")
+    add_previous(client, step=1, channel="email", status="approved")
+    add_previous(client, step=1, channel="linkedin", status="approved")
 
 
 def test_followup_step_must_be_two_three_or_four():
@@ -131,7 +131,7 @@ def test_followup_step_must_be_two_three_or_four():
 
 def test_disqualified_leads_are_skipped_and_followup_one_requires_primary():
     client = FakeClient()
-    add_previous(client, step=1, channel="email")
+    add_previous(client, step=1, channel="email", status="approved")
 
     result = generate_followup_drafts_for_review_leads(client, followup_step=2, dry_run=True)
 
@@ -143,7 +143,7 @@ def test_disqualified_leads_are_skipped_and_followup_one_requires_primary():
 
 def test_followup_two_requires_followup_one():
     client = FakeClient()
-    add_previous(client, step=1, channel="email")
+    add_previous(client, step=1, channel="email", status="approved")
 
     result = generate_followup_drafts_for_review_leads(
         client,
@@ -155,7 +155,7 @@ def test_followup_two_requires_followup_one():
     assert result.email_drafts_created == 0
     assert result.skipped_missing_previous == 1
 
-    add_previous(client, step=2, channel="email")
+    add_previous(client, step=2, channel="email", status="approved")
     result = generate_followup_drafts_for_review_leads(
         client,
         followup_step=3,
@@ -167,7 +167,7 @@ def test_followup_two_requires_followup_one():
 
 def test_followup_three_requires_followup_two():
     client = FakeClient()
-    add_previous(client, step=2, channel="email")
+    add_previous(client, step=2, channel="email", status="approved")
 
     result = generate_followup_drafts_for_review_leads(
         client,
@@ -179,7 +179,7 @@ def test_followup_three_requires_followup_two():
     assert result.email_drafts_created == 0
     assert result.skipped_missing_previous == 1
 
-    add_previous(client, step=3, channel="email")
+    add_previous(client, step=3, channel="email", status="approved")
     result = generate_followup_drafts_for_review_leads(
         client,
         followup_step=4,
@@ -191,7 +191,7 @@ def test_followup_three_requires_followup_two():
 
 def test_existing_same_step_channel_prevents_duplicate():
     client = FakeClient()
-    add_previous(client, step=1, channel="email")
+    add_previous(client, step=1, channel="email", status="approved")
     add_previous(client, step=2, channel="email")
 
     result = generate_followup_drafts_for_review_leads(
@@ -260,8 +260,8 @@ def test_rejected_previous_step_blocks_followup():
 
 def test_followup_email_and_linkedin_are_inserted_as_drafts_without_internal_words():
     client = FakeClient()
-    add_previous(client, step=1, channel="email")
-    add_previous(client, step=1, channel="linkedin")
+    add_previous(client, step=1, channel="email", status="approved")
+    add_previous(client, step=1, channel="linkedin", status="approved")
 
     result = generate_followup_drafts_for_review_leads(client, followup_step=2, dry_run=False)
 
@@ -283,7 +283,7 @@ def test_followup_email_and_linkedin_are_inserted_as_drafts_without_internal_wor
 
 def test_dry_run_does_not_insert_or_touch_sending_tables():
     client = FakeClient()
-    add_previous(client, step=1, channel="email")
+    add_previous(client, step=1, channel="email", status="approved")
 
     generate_followup_drafts_for_review_leads(
         client,

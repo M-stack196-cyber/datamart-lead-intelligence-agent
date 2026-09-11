@@ -5,6 +5,9 @@ from typing import Any
 from urllib.parse import urlparse
 
 
+SENT_LIKE_STATUSES = {"approved", "sent", "sent_manually", "manual_sent", "delivered"}
+
+
 @dataclass(frozen=True)
 class DraftPreview:
     lead_id: str
@@ -264,7 +267,7 @@ def _has_valid_previous_step(
 ) -> bool:
     return any(
         _same_channel_step(row, channel, sequence_step)
-        and str(row.get("status") or "").casefold() not in {"rejected", "cancelled"}
+        and str(row.get("status") or "").casefold() in SENT_LIKE_STATUSES
         for row in existing_drafts
     )
 

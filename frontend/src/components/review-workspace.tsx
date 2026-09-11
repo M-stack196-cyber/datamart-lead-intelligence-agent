@@ -50,6 +50,7 @@ type Lead = {
   created_at: string | null;
   source_captured_at: string | null;
   latest_score: Score | null;
+  has_replies: boolean;
   outreach_drafts: DraftGroups;
 };
 
@@ -72,6 +73,21 @@ function firstDomain(url: string | null) {
   } catch {
     return url.replace(/^https?:\/\//, "").replace(/^www\./, "").split("/")[0] || url;
   }
+}
+
+function latestDraftForChannel(drafts: OutreachDraft[], channel: "email" | "linkedin") {
+  return drafts
+    .filter((draft) => draft.channel === channel)
+    .sort((first, second) => second.sequence_step - first.sequence_step)[0];
+}
+
+function followupMessage(lead: Lead, drafts: OutreachDraft[], channel: "email" | "linkedin") {
+  if (lead.has_replies) return "Lead replied - follow-up stopped";
+  const latest = latestDraftForChannel(drafts, channel);
+  if (!latest) return "Create the primary draft before follow-ups";
+  if (latest.sequence_step >= 4 && latest.status === "approved") return "Sequence complete";
+  if (latest.status !== "approved") return "Review and send previous step before creating next follow-up";
+  return `Create next ${channel} follow-up draft`;
 }
 
 export function ReviewWorkspace() {
@@ -129,6 +145,39 @@ export function ReviewWorkspace() {
       setLoading(false);
     }
   }, [limit, source, status, supabase]);
+
+  const createNextFollowup = useCallback(async (leadId: string, channel: "email" | "linkedin") => {
+    if (!supabase) return;
+    setError("");
+    setMessage("");
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error("Authentication required");
+      const response = await fetch(`${apiBase()}/leads/${leadId}/outreach/next-followup-draft`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ channel, source }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.detail || "Unable to create next follow-up draft");
+      const result = payload.results?.[channel];
+      if (result?.reason === "lead_replied") {
+        setMessage("Lead replied - follow-up stopped.");
+      } else if (result?.reason === "previous_step_not_sent_or_approved") {
+        setMessage("Review and send previous step before creating next follow-up.");
+      } else if (result?.reason === "existing_draft") {
+        setMessage("The next follow-up draft already exists.");
+      } else if (result?.reason === "sequence_complete") {
+        setMessage("Sequence complete.");
+      } else {
+        setMessage("Next follow-up draft created for review.");
+      }
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to create next follow-up draft");
+    }
+  }, [load, source, supabase]);
 
   useEffect(() => {
     const task = window.setTimeout(() => void load(), 0);
@@ -266,18 +315,35 @@ export function ReviewWorkspace() {
                   </div>
                 </div>
 
-                <div className="mt-5 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-                  {stepKeys.map((step, index) => (
-                    <div key={step} className="rounded-2xl border border-slate-200 p-4">
-                      <p className="text-xs font-bold uppercase text-slate-500">Step {index + 1}</p>
-                      <p className="mt-2 text-sm text-slate-700">
-                        Email: <span className="font-bold capitalize">{lead.outreach_drafts.email[step]?.status || "missing"}</span>
-                      </p>
-                      <p className="mt-1 text-sm text-slate-700">
-                        LinkedIn: <span className="font-bold capitalize">{lead.outreach_drafts.linkedin[step]?.status || "missing"}</span>
-                      </p>
-                    </div>
-                  ))}
+                <div className="mt-5 grid gap-3 md:grid-cols-2">
+                  {(["email", "linkedin"] as const).map((channel) => {
+                    const latest = latestDraftForChannel(drafts, channel);
+                    const canCreate = Boolean(latest && latest.status === "approved" && latest.sequence_step < 4 && !lead.has_replies);
+                    return (
+                      <div key={channel} className="rounded-2xl border border-slate-200 p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-bold uppercase text-slate-500">{channel}</p>
+                            <p className="mt-2 text-sm text-slate-700">{followupMessage(lead, drafts, channel)}</p>
+                          </div>
+                          {canCreate && (
+                            <button
+                              type="button"
+                              onClick={() => void createNextFollowup(lead.id, channel)}
+                              className="rounded-lg border border-teal-300 px-3 py-2 text-xs font-bold text-teal-800"
+                            >
+                              Create next follow-up draft
+                            </button>
+                          )}
+                        </div>
+                        {latest && (
+                          <p className="mt-2 text-xs text-slate-500">
+                            Latest: step {latest.sequence_step}, {latest.status}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
 
                 <button
@@ -302,6 +368,7 @@ export function ReviewWorkspace() {
                     }}
                     allowGenerate={false}
                     allowSendActions={false}
+                    allowManualSend
                   />
                 )}
               </article>

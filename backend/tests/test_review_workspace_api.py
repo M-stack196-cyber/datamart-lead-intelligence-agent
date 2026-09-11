@@ -26,6 +26,11 @@ class FakeQuery:
         self.payload = payload
         return self
 
+    def insert(self, payload):
+        self.operation = "insert"
+        self.payload = payload
+        return self
+
     def eq(self, key, value):
         self.filters.append((key, value))
         return self
@@ -42,6 +47,12 @@ class FakeQuery:
         return self
 
     def execute(self):
+        if self.operation == "insert":
+            row = {"id": f"{self.table}-{len(self.client.rows.setdefault(self.table, [])) + 1}", **self.payload}
+            self.client.rows.setdefault(self.table, []).append(row)
+            self.client.inserts.setdefault(self.table, []).append(row)
+            return SimpleNamespace(data=[row])
+
         if self.operation == "update":
             if self.table != "outreach_drafts":
                 return SimpleNamespace(data=[])
@@ -143,7 +154,11 @@ class FakeClient:
                     "updated_at": "2026-09-11T02:00:00Z",
                 },
             ],
+            "email_delivery_attempts": [],
+            "inbound_reply_events": [],
+            "audit_log": [],
         }
+        self.inserts = {}
 
     def table(self, name):
         return FakeQuery(self, name)
@@ -217,6 +232,73 @@ async def test_draft_review_patch_updates_status_only_and_does_not_send():
     body = response.json()
     assert body["status"] == "draft"
     assert body["review_notes"] == "Tighten opening line"
+    assert send.call_count == 0
+
+
+@pytest.mark.anyio
+async def test_manual_send_endpoint_marks_approved_without_sending():
+    fake = FakeClient()
+    with (
+        patch("app.api.router._backend_client", return_value=fake),
+        patch("app.api.router._send_approved_email") as send,
+    ):
+        response = await request_as(
+            "sales",
+            "PATCH",
+            "/outreach-drafts/draft-email-1/manual-send",
+            {"review_notes": "Sent from personal inbox"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "approved"
+    assert body["review_notes"] == "Sent from personal inbox"
+    assert send.call_count == 0
+
+
+@pytest.mark.anyio
+async def test_next_followup_endpoint_blocks_when_previous_is_draft():
+    fake = FakeClient()
+    with (
+        patch("app.api.router._backend_client", return_value=fake),
+        patch("app.api.router._send_approved_email") as send,
+    ):
+        response = await request_as(
+            "manager",
+            "POST",
+            "/leads/lead-review/outreach/next-followup-draft",
+            {"channel": "email", "source": "apollo_csv"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["results"]["email"]["created"] is False
+    assert body["results"]["email"]["reason"] == "previous_step_not_sent_or_approved"
+    assert "outreach_drafts" not in fake.inserts
+    assert send.call_count == 0
+
+
+@pytest.mark.anyio
+async def test_next_followup_endpoint_creates_next_draft_after_manual_send():
+    fake = FakeClient()
+    fake.rows["outreach_drafts"][0]["status"] = "approved"
+    fake.rows["outreach_drafts"] = [fake.rows["outreach_drafts"][0]]
+    with (
+        patch("app.api.router._backend_client", return_value=fake),
+        patch("app.api.router._send_approved_email") as send,
+    ):
+        response = await request_as(
+            "sales",
+            "POST",
+            "/leads/lead-review/outreach/next-followup-draft",
+            {"channel": "email", "source": "apollo_csv"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["results"]["email"]["created"] is True
+    assert body["results"]["email"]["sequence_step"] == 2
+    assert fake.inserts["outreach_drafts"][0]["status"] == "draft"
     assert send.call_count == 0
 
 

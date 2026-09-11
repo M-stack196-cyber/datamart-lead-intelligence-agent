@@ -19,6 +19,15 @@ class DraftStatusReviewRequest(BaseModel):
     review_notes: str = Field(min_length=1, max_length=2000)
 
 
+class ManualSendRequest(BaseModel):
+    review_notes: str | None = Field(default=None, max_length=2000)
+
+
+class NextFollowupDraftRequest(BaseModel):
+    channel: Literal["email", "linkedin", "both"] = "both"
+    source: str = Field(default="apollo_csv", min_length=1, max_length=100)
+
+
 class SendEmailRequest(BaseModel):
     confirm: Literal[True]
 
