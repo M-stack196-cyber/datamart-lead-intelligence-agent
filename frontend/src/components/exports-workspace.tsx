@@ -85,6 +85,7 @@ export function ExportsWorkspace() {
   const [backupSource, setBackupSource] = useState("all");
   const [backupStatus, setBackupStatus] = useState("all");
   const [backupPreview, setBackupPreview] = useState<BackupPreview | null>(null);
+  const [handoffUnavailable, setHandoffUnavailable] = useState(false);
   const [error, setError] = useState("");
 
   const previewTotals = useMemo(() => {
@@ -100,6 +101,7 @@ export function ExportsWorkspace() {
   const load = useCallback(async () => {
     if (!supabase) return;
     setLoading(true);
+    setError("");
     const { data: user } = await supabase.auth.getUser();
     if (!user.user) return;
     const { data: profile, error: profileError } = await supabase
@@ -120,9 +122,12 @@ export function ExportsWorkspace() {
       return;
     }
     const { data, error: exportError } = await supabase.rpc("export_sales_approved_leads");
-    if (exportError) setError(exportError.message);
-    else {
+    if (exportError) {
+      setLeads([]);
+      setHandoffUnavailable(true);
+    } else {
       setLeads((data ?? []) as ExportLead[]);
+      setHandoffUnavailable(false);
       setError("");
     }
     setLoading(false);
@@ -322,6 +327,14 @@ export function ExportsWorkspace() {
       </div>
       {role === "admin" && <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <h2 className="text-lg font-bold text-slate-950">Approved sales handoff</h2>
+        <p className="mt-2 text-sm leading-6 text-slate-600">
+          Use Complete Lead Backup for full lead, draft, score, reply, and follow-up history.
+        </p>
+        {handoffUnavailable && (
+          <p className="mt-4 rounded-xl bg-amber-50 p-4 text-sm font-medium text-amber-900">
+            Approved sales handoff is not configured yet.
+          </p>
+        )}
         <p className="text-4xl font-bold">{loading ? "…" : leads.length}</p>
         <p className="mt-1 text-sm text-slate-500">Sales-ready leads</p>
         <button type="button" disabled={loading || !leads.length} onClick={download} className="mt-5 rounded-xl bg-teal-600 px-4 py-2 text-sm font-bold text-white disabled:opacity-50">
