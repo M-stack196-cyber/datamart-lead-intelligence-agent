@@ -69,7 +69,29 @@ Generic persistence stores Apollo CSV rows in `leads`, writes the current ICP re
 
 The CSV path is temporary. Production discovery should use an approved API provider such as Apollo paid, Clay, Seamless, Vibe, or a similar provider. CSV import does not send emails, LinkedIn messages, or Apollo sequences; outreach remains human-approved.
 
-Outreach draft generation is deferred for generic CSV imports. The current safe draft generation path requires stored evidence and sales approval, so CSV persistence stops at reviewable leads and ICP scores until generic evidence capture is added.
+Evidence-grounded automatic outreach and follow-up sequencing remain deferred for generic CSV imports until generic evidence capture is added. The primary draft generator below creates review-only drafts from stored lead fields and ICP review context.
+
+## Generating Review-Only Primary Drafts
+
+Apollo CSV and other generic lead-source imports can generate primary step-one outreach drafts for admin/sales review. Draft generation writes `draft` rows to `outreach_drafts` only; it does not send email, send LinkedIn messages, call Gmail delivery, or start provider-side sequences.
+
+Preview the drafts first:
+
+```bash
+cd backend
+source .venv/bin/activate
+PYTHONPATH=. python scripts/generate_primary_drafts.py --source apollo_csv --limit 25 --dry-run
+```
+
+Create review-only primary drafts:
+
+```bash
+cd backend
+source .venv/bin/activate
+PYTHONPATH=. python scripts/generate_primary_drafts.py --source apollo_csv --limit 25
+```
+
+The generator considers only `status = review` leads for the requested `lead_source`, skips any lead/channel pair that already has a step-one draft, and creates at most one email draft and one LinkedIn draft per eligible lead. Follow-up draft sequencing remains a later phase and must stay approval-gated.
 
 ## Seamless Placeholder
 
@@ -85,6 +107,7 @@ source .venv/bin/activate
 PYTHONPATH=. pytest tests/test_apollo_provider.py tests/test_apollo_lead_scoring.py -q
 PYTHONPATH=. pytest tests/test_apollo_csv_provider.py tests/test_apollo_csv_import_scoring.py -q
 PYTHONPATH=. pytest tests/test_lead_source_persistence.py tests/test_apollo_csv_import_persistence.py -q
+PYTHONPATH=. pytest tests/test_generic_outreach_drafts.py tests/test_generate_primary_drafts_script.py -q
 PYTHONPATH=. pytest tests -k "apollo or vibe" -q
 PYTHONPATH=. pytest tests -k "vibe" -q
 ```
