@@ -221,9 +221,60 @@ def test_existing_next_step_is_returned_without_duplicate_insert():
     assert client.inserts.get("outreach_drafts") is None
 
 
+def test_terminal_next_step_does_not_block_fresh_followup_after_manual_send():
+    for status in ("rejected", "archived", "cancelled"):
+        client = FakeClient()
+        add_draft(client, step=1, status="manual_sent")
+        add_draft(client, step=2, status=status)
+
+        result = create_next_followup_draft(
+            client,
+            lead_id="lead-review",
+            actor_id="user-1",
+            channel="email",
+        )
+
+        assert result.results["email"].created is True
+        assert result.results["email"].sequence_step == 2
+        assert client.inserts["outreach_drafts"][0]["sequence_step"] == 2
+
+
+def test_needs_edit_primary_does_not_allow_followup():
+    client = FakeClient()
+    add_draft(client, step=1, status="needs_edit")
+
+    result = create_next_followup_draft(
+        client,
+        lead_id="lead-review",
+        actor_id="user-1",
+        channel="email",
+    )
+
+    assert result.results["email"].created is False
+    assert result.results["email"].reason == "previous_step_not_sent_or_approved"
+    assert client.inserts.get("outreach_drafts") is None
+
+
 def test_lead_reply_blocks_followup_creation():
     client = FakeClient()
     add_draft(client, step=1, status="approved")
+    client.rows["inbound_reply_events"].append({"id": "reply-1", "lead_id": "lead-review"})
+
+    result = create_next_followup_draft(
+        client,
+        lead_id="lead-review",
+        actor_id="user-1",
+        channel="email",
+    )
+
+    assert result.results["email"].created is False
+    assert result.results["email"].reason == "lead_replied"
+    assert client.inserts.get("outreach_drafts") is None
+
+
+def test_lead_reply_blocks_followup_even_when_primary_is_manual_sent():
+    client = FakeClient()
+    add_draft(client, step=1, status="manual_sent")
     client.rows["inbound_reply_events"].append({"id": "reply-1", "lead_id": "lead-review"})
 
     result = create_next_followup_draft(

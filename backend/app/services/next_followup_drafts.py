@@ -425,7 +425,11 @@ def _draft_for_channel_step(
     sequence_step: int,
 ) -> dict[str, Any] | None:
     for draft in drafts:
-        if str(draft.get("channel") or "") == channel and _step(draft) == sequence_step:
+        if (
+            str(draft.get("channel") or "") == channel
+            and _step(draft) == sequence_step
+            and not _is_terminal(draft)
+        ):
             return draft
     return None
 
@@ -442,6 +446,10 @@ def _is_bad_primary_draft(draft: dict[str, Any]) -> bool:
         return False
     body = str(draft.get("body") or "").casefold()
     return any(phrase in body for phrase in BAD_PRIMARY_PHRASES)
+
+
+def _is_terminal(draft: dict[str, Any]) -> bool:
+    return str(draft.get("status") or "").casefold() in TERMINAL_STATUSES
 
 
 def _archive_draft(client: Any, draft_id: str) -> None:

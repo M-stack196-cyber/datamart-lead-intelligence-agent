@@ -56,6 +56,8 @@ type Lead = {
 };
 
 const stepKeys = ["step_1", "step_2", "step_3", "step_4"] as const;
+const activeDraftStatuses = new Set(["draft", "needs_edit", "approved", "manual_sent", "system_sent", "sent"]);
+const sentLikeDraftStatuses = new Set(["approved", "manual_sent", "system_sent", "sent"]);
 
 function apiBase() {
   return process.env.NEXT_PUBLIC_API_URL || (process.env.NODE_ENV === "production" ? "/api" : "http://localhost:8000");
@@ -76,18 +78,26 @@ function firstDomain(url: string | null) {
   }
 }
 
-function latestDraftForChannel(drafts: OutreachDraft[], channel: "email" | "linkedin") {
+function isActiveDraft(draft: OutreachDraft) {
+  return activeDraftStatuses.has(draft.status);
+}
+
+function isSentLikeDraft(draft: OutreachDraft) {
+  return sentLikeDraftStatuses.has(draft.status);
+}
+
+function latestActiveDraftForChannel(drafts: OutreachDraft[], channel: "email" | "linkedin") {
   return drafts
-    .filter((draft) => draft.channel === channel)
+    .filter((draft) => draft.channel === channel && isActiveDraft(draft))
     .sort((first, second) => second.sequence_step - first.sequence_step)[0];
 }
 
 function followupMessage(lead: Lead, drafts: OutreachDraft[], channel: "email" | "linkedin") {
   if (lead.has_replies) return "Lead replied - follow-up stopped";
-  const latest = latestDraftForChannel(drafts, channel);
+  const latest = latestActiveDraftForChannel(drafts, channel);
   if (!latest) return "Create the primary draft before follow-ups";
-  if (latest.sequence_step >= 4 && latest.status === "approved") return "Sequence complete";
-  if (latest.status !== "approved") return "Review and send previous step before creating next follow-up";
+  if (latest.sequence_step >= 4 && isSentLikeDraft(latest)) return "Sequence complete";
+  if (!isSentLikeDraft(latest)) return `Review/send Step ${latest.sequence_step} before creating next follow-up`;
   return `Create next ${channel} follow-up draft`;
 }
 
@@ -369,8 +379,8 @@ export function ReviewWorkspace() {
 
                 <div className="mt-5 grid gap-3 md:grid-cols-2">
                   {(["email", "linkedin"] as const).map((channel) => {
-                    const latest = latestDraftForChannel(drafts, channel);
-                    const canCreate = Boolean(latest && latest.status === "approved" && latest.sequence_step < 4 && !lead.has_replies);
+                    const latest = latestActiveDraftForChannel(drafts, channel);
+                    const canCreate = Boolean(latest && isSentLikeDraft(latest) && latest.sequence_step < 4 && !lead.has_replies);
                     return (
                       <div key={channel} className="rounded-2xl border border-slate-200 p-4">
                         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -390,7 +400,7 @@ export function ReviewWorkspace() {
                         </div>
                         {latest && (
                           <p className="mt-2 text-xs text-slate-500">
-                            Latest: step {latest.sequence_step}, {latest.status}
+                            Latest active: step {latest.sequence_step}, {latest.status}
                           </p>
                         )}
                       </div>

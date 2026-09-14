@@ -281,8 +281,34 @@ async def test_next_followup_endpoint_blocks_when_previous_is_draft():
 @pytest.mark.anyio
 async def test_next_followup_endpoint_creates_next_draft_after_manual_send():
     fake = FakeClient()
-    fake.rows["outreach_drafts"][0]["status"] = "approved"
+    fake.rows["outreach_drafts"][0]["status"] = "manual_sent"
     fake.rows["outreach_drafts"] = [fake.rows["outreach_drafts"][0]]
+    with (
+        patch("app.api.router._backend_client", return_value=fake),
+        patch("app.api.router._send_approved_email") as send,
+    ):
+        response = await request_as(
+            "sales",
+            "POST",
+            "/leads/lead-review/outreach/next-followup-draft",
+            {"channel": "email", "source": "apollo_csv"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["results"]["email"]["created"] is True
+    assert body["results"]["email"]["sequence_step"] == 2
+    assert fake.inserts["outreach_drafts"][0]["status"] == "draft"
+    assert send.call_count == 0
+
+
+@pytest.mark.anyio
+async def test_next_followup_endpoint_ignores_terminal_future_drafts():
+    fake = FakeClient()
+    fake.rows["outreach_drafts"][0]["status"] = "manual_sent"
+    fake.rows["outreach_drafts"][1]["channel"] = "email"
+    fake.rows["outreach_drafts"][1]["sequence_step"] = 2
+    fake.rows["outreach_drafts"][1]["status"] = "rejected"
     with (
         patch("app.api.router._backend_client", return_value=fake),
         patch("app.api.router._send_approved_email") as send,
