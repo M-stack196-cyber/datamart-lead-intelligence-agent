@@ -28,6 +28,11 @@ class NextFollowupDraftRequest(BaseModel):
     source: str = Field(default="apollo_csv", min_length=1, max_length=100)
 
 
+class PrimaryDraftRequest(BaseModel):
+    channel: Literal["email", "linkedin", "both"] = "both"
+    source: str = Field(default="apollo_csv", min_length=1, max_length=100)
+
+
 class SendEmailRequest(BaseModel):
     confirm: Literal[True]
 

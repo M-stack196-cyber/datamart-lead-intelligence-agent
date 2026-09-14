@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 from unittest.mock import patch
+import inspect
 
 import pytest
 from fastapi import HTTPException
@@ -7,6 +8,7 @@ from httpx import ASGITransport, AsyncClient
 
 from app.api.auth import CurrentUser, require_user
 from app.main import app
+from app.services.vibe_discovery_persistence import persist_discovery_intelligence
 
 
 class FakeQuery:
@@ -227,6 +229,12 @@ async def request_as(role: str, method: str, path: str, json: dict | None = None
         app.dependency_overrides.clear()
 
 
+def test_discovery_persistence_does_not_auto_generate_primary_drafts_by_default():
+    signature = inspect.signature(persist_discovery_intelligence)
+
+    assert signature.parameters["generate_drafts"].default is False
+
+
 @pytest.mark.anyio
 async def test_review_workspace_endpoint_returns_grouped_drafts_and_filters_defaults():
     fake = FakeClient()
@@ -331,6 +339,128 @@ async def test_next_followup_endpoint_blocks_when_previous_is_draft():
     assert body["results"]["email"]["created"] is False
     assert body["results"]["email"]["reason"] == "previous_step_not_sent_or_approved"
     assert "outreach_drafts" not in fake.inserts
+    assert send.call_count == 0
+
+
+@pytest.mark.anyio
+async def test_primary_draft_endpoint_creates_email_only_without_sending():
+    fake = FakeClient()
+    fake.rows["outreach_drafts"] = []
+    with (
+        patch("app.api.router._backend_client", return_value=fake),
+        patch("app.api.router._send_approved_email") as send,
+    ):
+        response = await request_as(
+            "sales",
+            "POST",
+            "/leads/lead-review/outreach/primary-draft",
+            {"channel": "email", "source": "apollo_csv"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["results"]["email"]["created"] is True
+    assert body["results"]["email"]["reason"] == "created_primary_draft"
+    assert len(fake.inserts["outreach_drafts"]) == 1
+    assert fake.inserts["outreach_drafts"][0]["channel"] == "email"
+    assert fake.inserts["outreach_drafts"][0]["sequence_step"] == 1
+    assert send.call_count == 0
+
+
+@pytest.mark.anyio
+async def test_primary_draft_endpoint_creates_linkedin_only_without_sending():
+    fake = FakeClient()
+    fake.rows["outreach_drafts"] = []
+    with (
+        patch("app.api.router._backend_client", return_value=fake),
+        patch("app.api.router._send_approved_email") as send,
+    ):
+        response = await request_as(
+            "sales",
+            "POST",
+            "/leads/lead-review/outreach/primary-draft",
+            {"channel": "linkedin", "source": "apollo_csv"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["results"]["linkedin"]["created"] is True
+    assert body["results"]["linkedin"]["reason"] == "created_primary_draft"
+    assert len(fake.inserts["outreach_drafts"]) == 1
+    assert fake.inserts["outreach_drafts"][0]["channel"] == "linkedin"
+    assert fake.inserts["outreach_drafts"][0]["sequence_step"] == 1
+    assert send.call_count == 0
+
+
+@pytest.mark.anyio
+async def test_primary_draft_endpoint_creates_both_requested_channels():
+    fake = FakeClient()
+    fake.rows["outreach_drafts"] = []
+    with (
+        patch("app.api.router._backend_client", return_value=fake),
+        patch("app.api.router._send_approved_email") as send,
+    ):
+        response = await request_as(
+            "manager",
+            "POST",
+            "/leads/lead-review/outreach/primary-draft",
+            {"channel": "both", "source": "apollo_csv"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["results"]["email"]["reason"] == "created_primary_draft"
+    assert body["results"]["linkedin"]["reason"] == "created_primary_draft"
+    assert {row["channel"] for row in fake.inserts["outreach_drafts"]} == {"email", "linkedin"}
+    assert send.call_count == 0
+
+
+@pytest.mark.anyio
+async def test_primary_draft_endpoint_does_not_duplicate_active_primary():
+    fake = FakeClient()
+    fake.rows["outreach_drafts"] = [fake.rows["outreach_drafts"][0]]
+    with (
+        patch("app.api.router._backend_client", return_value=fake),
+        patch("app.api.router._send_approved_email") as send,
+    ):
+        response = await request_as(
+            "manager",
+            "POST",
+            "/leads/lead-review/outreach/primary-draft",
+            {"channel": "email", "source": "apollo_csv"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["results"]["email"]["created"] is False
+    assert body["results"]["email"]["reason"] == "existing_draft"
+    assert fake.inserts == {}
+    assert send.call_count == 0
+
+
+@pytest.mark.anyio
+async def test_primary_draft_endpoint_reactivates_terminal_primary_only_on_request():
+    fake = FakeClient()
+    fake.rows["outreach_drafts"] = [fake.rows["outreach_drafts"][0]]
+    fake.rows["outreach_drafts"][0]["status"] = "rejected"
+    with (
+        patch("app.api.router._backend_client", return_value=fake),
+        patch("app.api.router._send_approved_email") as send,
+    ):
+        response = await request_as(
+            "manager",
+            "POST",
+            "/leads/lead-review/outreach/primary-draft",
+            {"channel": "email", "source": "apollo_csv"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["results"]["email"]["created"] is True
+    assert body["results"]["email"]["reason"] == "reactivated_existing_terminal_draft"
+    assert fake.rows["outreach_drafts"][0]["status"] == "draft"
+    assert fake.rows["outreach_drafts"][0]["review_notes"] == "Reactivated as primary outreach draft by team request."
+    assert fake.inserts == {}
     assert send.call_count == 0
 
 

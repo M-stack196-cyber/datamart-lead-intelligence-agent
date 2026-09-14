@@ -60,6 +60,8 @@ type Lead = {
 const stepKeys = ["step_1", "step_2", "step_3", "step_4"] as const;
 const activeDraftStatuses = new Set(["draft", "needs_edit", "approved", "manual_sent", "system_sent", "sent"]);
 const sentLikeDraftStatuses = new Set(["approved", "manual_sent", "system_sent", "sent"]);
+type DraftChannelRequest = "email" | "linkedin" | "both";
+type DraftCreationResult = { reason?: string };
 
 function draftList(groups: DraftGroups): OutreachDraft[] {
   return stepKeys
@@ -97,10 +99,19 @@ function latestActiveDraftForChannel(drafts: OutreachDraft[], channel: "email" |
 function followupMessage(lead: Lead, drafts: OutreachDraft[], channel: "email" | "linkedin") {
   if (lead.has_replies) return "Lead replied - follow-up stopped";
   const latest = latestActiveDraftForChannel(drafts, channel);
-  if (!latest) return "Create the primary draft before follow-ups";
+  if (!latest) return `No ${channel} draft exists yet.`;
   if (latest.sequence_step >= 4 && isSentLikeDraft(latest)) return "Sequence complete";
   if (!isSentLikeDraft(latest)) return `Review/send Step ${latest.sequence_step} before creating next follow-up`;
   return `Create next ${channel} follow-up draft`;
+}
+
+function canCreateNextFollowup(lead: Lead, drafts: OutreachDraft[], channel: "email" | "linkedin") {
+  const latest = latestActiveDraftForChannel(drafts, channel);
+  return Boolean(latest && isSentLikeDraft(latest) && latest.sequence_step < 4 && !lead.has_replies);
+}
+
+function isDraftCreationResult(value: DraftCreationResult | undefined): value is DraftCreationResult {
+  return Boolean(value);
 }
 
 export function ReviewWorkspace() {
@@ -206,7 +217,32 @@ export function ReviewWorkspace() {
     }
   }, [limit, source, status, supabase]);
 
-  const createNextFollowup = useCallback(async (leadId: string, channel: "email" | "linkedin") => {
+  const createPrimaryDraft = useCallback(async (leadId: string, channel: DraftChannelRequest) => {
+    if (!supabase) return;
+    setError("");
+    setMessage("");
+    try {
+      const response = await authenticatedFetch(supabase, `/leads/${leadId}/outreach/primary-draft`, {
+        method: "POST",
+        body: JSON.stringify({ channel, source }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.detail || "Unable to create primary outreach draft");
+      const results = Object.values(payload.results ?? {}) as Array<{ reason?: string }>;
+      if (results.some((result) => result.reason === "reactivated_existing_terminal_draft")) {
+        setMessage("Primary draft reactivated for review.");
+      } else if (results.every((result) => result.reason === "existing_draft")) {
+        setMessage("The requested primary draft already exists.");
+      } else {
+        setMessage("Primary draft created for review.");
+      }
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to create primary outreach draft");
+    }
+  }, [load, source, supabase]);
+
+  const createNextFollowup = useCallback(async (leadId: string, channel: DraftChannelRequest) => {
     if (!supabase) return;
     setError("");
     setMessage("");
@@ -217,16 +253,18 @@ export function ReviewWorkspace() {
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.detail || "Unable to create next follow-up draft");
-      const result = payload.results?.[channel];
-      if (result?.reason === "lead_replied") {
+      const results = channel === "both"
+        ? Object.values(payload.results ?? {}) as Array<{ reason?: string }>
+        : ([payload.results?.[channel] as DraftCreationResult | undefined]).filter(isDraftCreationResult);
+      if (results.some((result) => result.reason === "lead_replied")) {
         setMessage("Lead replied - follow-up stopped.");
-      } else if (result?.reason === "previous_step_not_sent_or_approved") {
+      } else if (results.some((result) => result.reason === "previous_step_not_sent_or_approved")) {
         setMessage("Review and send previous step before creating next follow-up.");
-      } else if (result?.reason === "existing_draft") {
+      } else if (results.every((result) => result.reason === "existing_draft")) {
         setMessage("The next follow-up draft already exists.");
-      } else if (result?.reason === "reactivated_existing_terminal_draft") {
+      } else if (results.some((result) => result.reason === "reactivated_existing_terminal_draft")) {
         setMessage("Next follow-up draft reactivated for review.");
-      } else if (result?.reason === "sequence_complete") {
+      } else if (results.every((result) => result.reason === "sequence_complete")) {
         setMessage("Sequence complete.");
       } else {
         setMessage("Next follow-up draft created for review.");
@@ -335,6 +373,10 @@ export function ReviewWorkspace() {
             const score = lead.latest_score;
             const drafts = draftList(lead.outreach_drafts);
             const archivedDrafts = archivedDraftList(lead.outreach_drafts);
+            const hasEmailPrimary = Boolean(lead.outreach_drafts.email.step_1);
+            const hasLinkedinPrimary = Boolean(lead.outreach_drafts.linkedin.step_1);
+            const emailFollowupReady = canCreateNextFollowup(lead, drafts, "email");
+            const linkedinFollowupReady = canCreateNextFollowup(lead, drafts, "linkedin");
             const reasons = score?.review_reasons?.length
               ? score.review_reasons
               : score?.hard_stops?.length
@@ -394,10 +436,37 @@ export function ReviewWorkspace() {
                   </div>
                 </div>
 
+                {(!hasEmailPrimary || !hasLinkedinPrimary) && (
+                  <div className="mt-5 rounded-2xl border border-teal-100 bg-teal-50 p-4">
+                    <p className="text-sm font-bold text-teal-950">
+                      {!hasEmailPrimary && !hasLinkedinPrimary
+                        ? "No outreach draft exists yet. Create a draft only when the team is ready."
+                        : "Create the missing primary draft only when the team is ready."}
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {!hasEmailPrimary && (
+                        <button type="button" onClick={() => void createPrimaryDraft(lead.id, "email")} className="rounded-lg border border-teal-300 bg-white px-3 py-2 text-xs font-bold text-teal-800">
+                          Create Email draft
+                        </button>
+                      )}
+                      {!hasLinkedinPrimary && (
+                        <button type="button" onClick={() => void createPrimaryDraft(lead.id, "linkedin")} className="rounded-lg border border-teal-300 bg-white px-3 py-2 text-xs font-bold text-teal-800">
+                          Create LinkedIn draft
+                        </button>
+                      )}
+                      {!hasEmailPrimary && !hasLinkedinPrimary && (
+                        <button type="button" onClick={() => void createPrimaryDraft(lead.id, "both")} className="rounded-lg bg-teal-700 px-3 py-2 text-xs font-bold text-white">
+                          Create both drafts
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="mt-5 grid gap-3 md:grid-cols-2">
                   {(["email", "linkedin"] as const).map((channel) => {
                     const latest = latestActiveDraftForChannel(drafts, channel);
-                    const canCreate = Boolean(latest && isSentLikeDraft(latest) && latest.sequence_step < 4 && !lead.has_replies);
+                    const canCreate = canCreateNextFollowup(lead, drafts, channel);
                     return (
                       <div key={channel} className="rounded-2xl border border-slate-200 p-4">
                         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -411,7 +480,7 @@ export function ReviewWorkspace() {
                               onClick={() => void createNextFollowup(lead.id, channel)}
                               className="rounded-lg border border-teal-300 px-3 py-2 text-xs font-bold text-teal-800"
                             >
-                              Create next follow-up draft
+                              Create next {channel === "email" ? "Email" : "LinkedIn"} follow-up draft
                             </button>
                           )}
                         </div>
@@ -424,6 +493,16 @@ export function ReviewWorkspace() {
                     );
                   })}
                 </div>
+
+                {emailFollowupReady && linkedinFollowupReady && (
+                  <button
+                    type="button"
+                    onClick={() => void createNextFollowup(lead.id, "both")}
+                    className="mt-3 rounded-lg bg-slate-950 px-3 py-2 text-xs font-bold text-white"
+                  >
+                    Create both next follow-up drafts
+                  </button>
+                )}
 
                 <button
                   type="button"

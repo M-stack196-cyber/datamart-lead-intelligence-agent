@@ -20,6 +20,7 @@ from app.schemas.outreach import (
     ManualSendRequest,
     NextFollowupDraftRequest,
     PauseSequenceRequest,
+    PrimaryDraftRequest,
     ReviewOutreachRequest,
     RunDueFollowupsRequest,
     SaveOutreachDraftRequest,
@@ -70,6 +71,7 @@ from app.services.next_followup_drafts import (
     create_next_followup_draft,
     mark_draft_manually_sent,
 )
+from app.services.primary_outreach_drafts import create_primary_outreach_draft
 from app.services.lead_backup_export import build_lead_backup_csv, build_lead_backup_preview
 
 from app.services.vibe_discovery_cycle import approved_daily_limit, run_vibe_discovery_cycle
@@ -357,6 +359,35 @@ def _create_next_followup(
     request: NextFollowupDraftRequest,
 ) -> dict:
     result = create_next_followup_draft(
+        _backend_client(settings),
+        lead_id=lead_id,
+        actor_id=actor_id,
+        channel=request.channel,
+        source=request.source,
+    )
+    return {
+        "lead_id": result.lead_id,
+        "source": result.source,
+        "results": {
+            channel: {
+                "channel": item.channel,
+                "created": item.created,
+                "reason": item.reason,
+                "sequence_step": item.sequence_step,
+                "draft": item.draft,
+            }
+            for channel, item in result.results.items()
+        },
+    }
+
+
+def _create_primary_outreach(
+    settings: Settings,
+    actor_id: str,
+    lead_id: str,
+    request: PrimaryDraftRequest,
+) -> dict:
+    result = create_primary_outreach_draft(
         _backend_client(settings),
         lead_id=lead_id,
         actor_id=actor_id,
@@ -1246,6 +1277,23 @@ async def create_next_followup_draft_route(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail="Unable to create next follow-up draft") from exc
+
+
+@router.post("/leads/{lead_id}/outreach/primary-draft", tags=["outreach"])
+async def create_primary_outreach_draft_route(
+    lead_id: str,
+    request: PrimaryDraftRequest,
+    user: CurrentUser = Depends(require_roles("admin", "manager", "sales")),
+) -> dict:
+    """Create only the requested primary draft channel by explicit team action."""
+    try:
+        return _create_primary_outreach(get_settings(), user.id, lead_id, request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Unable to create primary outreach draft") from exc
 
 
 @router.post("/outreach/drafts/{draft_id}/send-email", tags=["outreach"])

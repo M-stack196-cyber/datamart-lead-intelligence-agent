@@ -62,7 +62,7 @@ def persist_discovery_intelligence(
         QualifiedProspectIntelligence
     ],
     *,
-    generate_drafts: bool = True,
+    generate_drafts: bool = False,
 ) -> DiscoveryPersistenceResult:
     rejected_errors = []
     accepted_items = []
