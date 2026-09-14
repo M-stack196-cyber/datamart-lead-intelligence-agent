@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { CollectionSearchBar } from "@/components/collection-search-bar";
 import { OutreachDraftPanel, type OutreachDraft } from "@/components/outreach-draft-panel";
 
 type Role = "admin" | "manager" | "sales";
@@ -98,6 +99,7 @@ export function ReviewWorkspace() {
   const [limit, setLimit] = useState(50);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -111,6 +113,43 @@ export function ReviewWorkspace() {
     );
     return { draftCount, reviewDrafts };
   }, [leads]);
+
+  const visibleLeads = useMemo(() => {
+    const search = searchTerm.trim().toLocaleLowerCase();
+    if (!search) return leads;
+    return leads.filter((lead) => {
+      const score = lead.latest_score;
+      const drafts = draftList(lead.outreach_drafts);
+      return [
+        lead.person_name,
+        lead.title,
+        lead.company_name,
+        lead.email,
+        lead.phone,
+        lead.linkedin_url,
+        lead.company_url,
+        lead.country,
+        lead.industry,
+        lead.lead_source,
+        lead.source_id,
+        lead.status,
+        score?.disposition,
+        score?.tier,
+        score?.persona,
+        score?.intent_level,
+        ...(score?.review_reasons ?? []),
+        ...(score?.hard_stops ?? []),
+        ...drafts.flatMap((draft) => [
+          draft.channel,
+          draft.status,
+          draft.subject,
+          draft.body,
+          draft.review_notes,
+          String(draft.sequence_step),
+        ]),
+      ].some((value) => String(value ?? "").toLocaleLowerCase().includes(search));
+    });
+  }, [leads, searchTerm]);
 
   const load = useCallback(async () => {
     if (!supabase) return;
@@ -247,14 +286,27 @@ export function ReviewWorkspace() {
           <p className="rounded-xl bg-slate-50 p-3"><span className="font-bold">{totals.reviewDrafts}</span> drafts pending review</p>
         </div>
       </div>
+      {!loading && leads.length > 0 && (
+        <CollectionSearchBar
+          label="Search review leads"
+          placeholder="Search by person, company, email, source, ICP reason, draft text, or step status"
+          value={searchTerm}
+          onChange={setSearchTerm}
+          shownCount={visibleLeads.length}
+          totalCount={leads.length}
+          noun="review leads"
+        />
+      )}
 
       {loading ? (
         <p className="rounded-3xl bg-white p-8 text-sm text-slate-500">Loading review workspace...</p>
       ) : leads.length === 0 ? (
         <p className="rounded-3xl bg-white p-8 text-sm text-slate-500">No matching leads found.</p>
+      ) : visibleLeads.length === 0 ? (
+        <p className="rounded-3xl bg-white p-8 text-sm text-slate-500">No review leads match the current search.</p>
       ) : (
         <div className="space-y-5">
-          {leads.map((lead) => {
+          {visibleLeads.map((lead) => {
             const score = lead.latest_score;
             const drafts = draftList(lead.outreach_drafts);
             const reasons = score?.review_reasons?.length

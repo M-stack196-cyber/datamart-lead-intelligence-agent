@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { CollectionSearchBar } from "@/components/collection-search-bar";
 
 type ExportLead = {
   lead_id: string;
@@ -84,6 +85,7 @@ export function ExportsWorkspace() {
   const [previewBusy, setPreviewBusy] = useState(false);
   const [backupSource, setBackupSource] = useState("all");
   const [backupStatus, setBackupStatus] = useState("all");
+  const [backupSearch, setBackupSearch] = useState("");
   const [backupPreview, setBackupPreview] = useState<BackupPreview | null>(null);
   const [handoffUnavailable, setHandoffUnavailable] = useState(false);
   const [error, setError] = useState("");
@@ -97,6 +99,44 @@ export function ExportsWorkspace() {
       replies: rows.filter((row) => row.lead_replied).length,
     };
   }, [backupPreview]);
+
+  const visibleBackupLeads = useMemo(() => {
+    const rows = backupPreview?.leads ?? [];
+    const search = backupSearch.trim().toLocaleLowerCase();
+    if (!search) return rows;
+    return rows.filter((lead) =>
+      [
+        lead.person_name,
+        lead.title,
+        lead.company_name,
+        lead.email,
+        lead.phone,
+        lead.linkedin_url,
+        lead.company_url,
+        lead.country,
+        lead.industry,
+        lead.lead_source,
+        lead.source_id,
+        lead.status,
+        lead.icp_score,
+        lead.disposition,
+        lead.tier,
+        lead.persona,
+        lead.intent_level,
+        lead.latest_reply_at,
+        ...lead.review_reasons,
+        ...lead.hard_stops,
+        lead.email_step_1_status,
+        lead.email_step_2_status,
+        lead.email_step_3_status,
+        lead.email_step_4_status,
+        lead.linkedin_step_1_status,
+        lead.linkedin_step_2_status,
+        lead.linkedin_step_3_status,
+        lead.linkedin_step_4_status,
+      ].some((value) => String(value ?? "").toLocaleLowerCase().includes(search)),
+    );
+  }, [backupPreview, backupSearch]);
 
   const load = useCallback(async () => {
     if (!supabase) return;
@@ -218,6 +258,7 @@ export function ExportsWorkspace() {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.detail || "Unable to load lead backup preview");
       setBackupPreview(payload as BackupPreview);
+      setBackupSearch("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to load lead backup preview");
     } finally {
@@ -285,6 +326,16 @@ export function ExportsWorkspace() {
             <p className="rounded-xl bg-slate-50 p-3"><span className="font-bold">{previewTotals.replies}</span> replies</p>
           </div>
           <p className="text-xs font-medium text-slate-500">Generated at {backupPreview.generated_at} | Showing {backupPreview.leads.length} of limit {backupPreview.limit}</p>
+          <CollectionSearchBar
+            compact
+            label="Search backup preview"
+            placeholder="Search by person, company, email, source, score, reason, reply, or step status"
+            value={backupSearch}
+            onChange={setBackupSearch}
+            shownCount={visibleBackupLeads.length}
+            totalCount={backupPreview.leads.length}
+            noun="backup rows"
+          />
           <div className="overflow-x-auto rounded-2xl border border-slate-200">
             <table className="w-full min-w-[1100px] text-left text-sm">
               <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
@@ -304,7 +355,13 @@ export function ExportsWorkspace() {
                 </tr>
               </thead>
               <tbody>
-                {backupPreview.leads.map((lead) => (
+                {visibleBackupLeads.length === 0 ? (
+                  <tr>
+                    <td colSpan={12} className="p-8 text-center text-sm text-slate-500">
+                      No backup rows match the current search.
+                    </td>
+                  </tr>
+                ) : visibleBackupLeads.map((lead) => (
                   <tr key={lead.lead_id} className="border-t border-slate-100 align-top">
                     <td className="p-3"><p className="font-bold text-slate-900">{lead.person_name || "Unknown"}</p><p className="mt-1 text-xs text-slate-500">{lead.title || "Title unknown"}</p><p className="mt-1 text-xs text-slate-500">{lead.email}</p></td>
                     <td className="p-3"><p className="font-bold text-slate-900">{lead.company_name || "Unknown"}</p><p className="mt-1 text-xs text-slate-500">{lead.industry || "Industry unknown"}</p><p className="mt-1 text-xs text-slate-500">{lead.country}</p></td>
