@@ -112,7 +112,7 @@ class FakeClient:
                     "sequence_step": 1,
                     "subject": "Quick question",
                     "body": "Hi Maya with a deliberately long full email body for CSV backup",
-                    "status": "approved",
+                    "status": "manual_sent",
                     "review_notes": "Marked as manually sent outside the system.",
                     "reviewed_at": "2026-09-11T02:00:00Z",
                 },
@@ -123,7 +123,7 @@ class FakeClient:
                     "sequence_step": 2,
                     "subject": None,
                     "body": "Quick bump with full LinkedIn text for CSV backup",
-                    "status": "draft",
+                    "status": "system_sent",
                     "review_notes": "",
                     "reviewed_at": None,
                 },
@@ -168,12 +168,12 @@ def test_lead_backup_csv_includes_lead_score_drafts_reply_and_send_counts():
     assert row["total_drafts"] == "2"
     assert row["email_step_1_subject"] == "Quick question"
     assert row["email_step_1_body"] == "Hi Maya with a deliberately long full email body for CSV backup"
-    assert row["email_step_1_status"] == "approved"
+    assert row["email_step_1_status"] == "manual_sent"
     assert row["linkedin_step_2_body"] == "Quick bump with full LinkedIn text for CSV backup"
     assert row["lead_replied"] == "True"
     assert row["latest_reply_at"] == "2026-09-11T03:00:00Z"
     assert row["manually_sent_count"] == "1"
-    assert row["system_sent_count"] == "1"
+    assert row["system_sent_count"] == "2"
 
 
 def test_lead_backup_csv_source_and_status_filters_work():
@@ -199,11 +199,11 @@ def test_lead_backup_preview_returns_summary_without_full_body_fields():
     assert row["icp_score"] == "80"
     assert row["review_reasons"] == ["Strong decision-maker fit"]
     assert row["total_drafts"] == 2
-    assert row["approved_count"] == 1
-    assert row["draft_count"] == 1
+    assert row["approved_count"] == 0
+    assert row["draft_count"] == 0
     assert row["lead_replied"] is True
-    assert row["email_step_1_status"] == "approved"
-    assert row["linkedin_step_2_status"] == "draft"
+    assert row["email_step_1_status"] == "manual_sent"
+    assert row["linkedin_step_2_status"] == "system_sent"
     assert "email_step_1_body" not in row
     assert "linkedin_step_2_body" not in row
 

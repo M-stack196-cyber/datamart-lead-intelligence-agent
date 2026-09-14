@@ -5,7 +5,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 
-SENT_LIKE_STATUSES = {"approved", "sent", "sent_manually", "manual_sent", "delivered"}
+SENT_LIKE_STATUSES = {"approved", "sent", "sent_manually", "manual_sent", "system_sent", "delivered"}
 
 
 @dataclass(frozen=True)

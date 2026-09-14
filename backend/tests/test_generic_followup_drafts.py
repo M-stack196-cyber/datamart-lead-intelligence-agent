@@ -165,6 +165,18 @@ def test_followup_two_requires_followup_one():
     assert result.email_drafts_created == 1
 
 
+def test_manual_and_system_sent_previous_steps_allow_followup():
+    client = FakeClient()
+    add_previous(client, step=1, channel="email", status="manual_sent")
+    add_previous(client, step=1, channel="linkedin", status="system_sent")
+
+    result = generate_followup_drafts_for_review_leads(client, followup_step=2, dry_run=True)
+
+    assert result.email_drafts_created == 1
+    assert result.linkedin_drafts_created == 1
+    assert result.skipped_missing_previous == 0
+
+
 def test_followup_three_requires_followup_two():
     client = FakeClient()
     add_previous(client, step=2, channel="email", status="approved")
@@ -246,6 +258,22 @@ def test_duplicate_prevention_is_separate_for_email_and_linkedin():
 def test_rejected_previous_step_blocks_followup():
     client = FakeClient()
     add_previous(client, step=1, channel="email", status="rejected")
+
+    result = generate_followup_drafts_for_review_leads(
+        client,
+        followup_step=2,
+        create_linkedin=False,
+        dry_run=True,
+    )
+
+    assert result.email_drafts_created == 0
+    assert result.skipped_missing_previous == 1
+
+
+@pytest.mark.parametrize("status", ["archived", "cancelled"])
+def test_archived_or_cancelled_previous_step_blocks_followup(status):
+    client = FakeClient()
+    add_previous(client, step=1, channel="email", status=status)
 
     result = generate_followup_drafts_for_review_leads(
         client,

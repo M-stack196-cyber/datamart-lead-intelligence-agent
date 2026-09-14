@@ -14,7 +14,7 @@ from app.services.generic_outreach_drafts import (
 ChannelRequest = Literal["email", "linkedin", "both"]
 DraftChannel = Literal["email", "linkedin"]
 
-SENT_LIKE_STATUSES = {"approved", "sent", "sent_manually", "manual_sent", "delivered"}
+SENT_LIKE_STATUSES = {"approved", "sent", "sent_manually", "manual_sent", "system_sent", "delivered"}
 TERMINAL_STATUSES = {"rejected", "cancelled", "archived"}
 BAD_PRIMARY_PHRASES = ("review-only note", "send a brief idea for review")
 
@@ -98,7 +98,7 @@ def mark_draft_manually_sent(
         client.table("outreach_drafts")
         .update(
             {
-                "status": "approved",
+                "status": "manual_sent",
                 "reviewed_by": actor_id,
                 "reviewed_at": _now_sql(),
                 "review_notes": review_note,
@@ -122,8 +122,8 @@ def mark_draft_manually_sent(
             "lead_id": draft.get("lead_id"),
             "channel": draft.get("channel"),
             "sequence_step": draft.get("sequence_step"),
-            "status_used": "approved",
-            "note": "Schema has no sent/manual_sent draft status; approved is the existing sent-like status.",
+            "status_used": "manual_sent",
+            "note": "Draft was manually sent outside the system and remains recorded for review history.",
         },
     )
     return rows[0]
@@ -449,7 +449,7 @@ def _archive_draft(client: Any, draft_id: str) -> None:
         client.table("outreach_drafts")
         .update(
             {
-                "status": "rejected",
+                "status": "archived",
                 "review_notes": "Archived by maintenance: pre-created follow-up before previous step was sent-like.",
             }
         )

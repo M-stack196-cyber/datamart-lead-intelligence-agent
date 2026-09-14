@@ -1,4 +1,5 @@
 from secrets import compare_digest
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from supabase import create_client
@@ -29,6 +30,7 @@ from app.integrations.outbound import InboundReplyRequest
 from app.lead_sources import ApolloLeadSourceProvider, ProviderAuthError
 from app.services.email_delivery import EmailDeliveryService
 from app.services.lead_source_ingestion import prepare_and_score_leads
+from app.services.lead_source_persistence import persist_scored_leads, service_role_client
 from app.services.outreach import OutreachDraftEngine, validate_outreach_for_approval
 from app.services.outreach_generation import (
     generate_outreach_message,
@@ -73,6 +75,10 @@ from app.services.lead_backup_export import build_lead_backup_csv, build_lead_ba
 from app.services.vibe_discovery_cycle import approved_daily_limit, run_vibe_discovery_cycle
 
 router = APIRouter()
+
+
+def _now_sql() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _require_cron_secret(settings: Settings, authorization: str | None) -> None:
@@ -275,6 +281,13 @@ def _send_approved_email(settings: Settings, actor_id: str, draft_id: str) -> di
         .execute()
         .data
     )
+    client.table("outreach_drafts").update(
+        {
+            "status": "system_sent",
+            "reviewed_by": actor_id,
+            "reviewed_at": _now_sql(),
+        }
+    ).eq("id", draft_id).execute()
     return {
         "status": "sent",
         "attempt_id": attempt["attempt_id"],
@@ -1326,6 +1339,7 @@ async def run_internal_vibe_discovery_cycle(
 async def run_internal_apollo_discovery_cycle(
     authorization: str | None = Header(default=None),
     limit: int = Query(default=100, ge=1, le=100),
+    persist: bool = Query(default=False),
 ):
     settings = get_settings()
     _require_cron_secret(settings, authorization)
@@ -1357,4 +1371,27 @@ async def run_internal_apollo_discovery_cycle(
         "rejected_count": result.rejected_count,
         "errors": result.errors,
         "warnings": result.warnings,
+        **(
+            {
+                "persistence": _persist_apollo_discovery_result(settings, result),
+            }
+            if persist
+            else {"persistence": None}
+        ),
+    }
+
+
+def _persist_apollo_discovery_result(settings: Settings, result) -> dict:
+    persisted = persist_scored_leads(
+        service_role_client(settings),
+        result,
+        file_name="apollo-api-discovery-cycle",
+    )
+    return {
+        "inserted_count": persisted.inserted_count,
+        "updated_count": persisted.updated_count,
+        "duplicate_count": persisted.duplicate_count,
+        "lead_score_count": persisted.lead_score_count,
+        "errors": persisted.errors,
+        "warnings": persisted.warnings,
     }

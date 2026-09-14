@@ -230,13 +230,13 @@ async def test_draft_review_patch_updates_status_only_and_does_not_send():
 
     assert response.status_code == 200
     body = response.json()
-    assert body["status"] == "draft"
+    assert body["status"] == "needs_edit"
     assert body["review_notes"] == "Tighten opening line"
     assert send.call_count == 0
 
 
 @pytest.mark.anyio
-async def test_manual_send_endpoint_marks_approved_without_sending():
+async def test_manual_send_endpoint_marks_manual_sent_without_sending():
     fake = FakeClient()
     with (
         patch("app.api.router._backend_client", return_value=fake),
@@ -251,7 +251,7 @@ async def test_manual_send_endpoint_marks_approved_without_sending():
 
     assert response.status_code == 200
     body = response.json()
-    assert body["status"] == "approved"
+    assert body["status"] == "manual_sent"
     assert body["review_notes"] == "Sent from personal inbox"
     assert send.call_count == 0
 

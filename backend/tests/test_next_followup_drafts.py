@@ -148,6 +148,38 @@ def test_next_followup_creates_step_two_after_previous_is_approved():
     assert client.inserts["outreach_drafts"][0]["sequence_step"] == 2
 
 
+def test_next_followup_creates_step_two_after_previous_is_manual_sent():
+    client = FakeClient()
+    add_draft(client, step=1, status="manual_sent")
+
+    result = create_next_followup_draft(
+        client,
+        lead_id="lead-review",
+        actor_id="user-1",
+        channel="email",
+    )
+
+    email = result.results["email"]
+    assert email.created is True
+    assert email.sequence_step == 2
+
+
+def test_next_followup_creates_step_two_after_previous_is_system_sent():
+    client = FakeClient()
+    add_draft(client, step=1, status="system_sent")
+
+    result = create_next_followup_draft(
+        client,
+        lead_id="lead-review",
+        actor_id="user-1",
+        channel="email",
+    )
+
+    email = result.results["email"]
+    assert email.created is True
+    assert email.sequence_step == 2
+
+
 def test_system_sent_attempt_allows_next_followup_even_if_draft_status_is_draft():
     client = FakeClient()
     draft = add_draft(client, step=1, status="draft")
@@ -240,7 +272,7 @@ def test_channels_are_advanced_separately():
     assert len(client.inserts["outreach_drafts"]) == 1
 
 
-def test_manual_send_marks_draft_as_approved_without_provider_send():
+def test_manual_send_marks_draft_as_manual_sent_without_provider_send():
     client = FakeClient()
     draft = add_draft(client, step=1, status="draft")
 
@@ -251,10 +283,40 @@ def test_manual_send_marks_draft_as_approved_without_provider_send():
         notes="Sent manually on LinkedIn",
     )
 
-    assert result["status"] == "approved"
+    assert result["status"] == "manual_sent"
     assert result["reviewed_by"] == "user-1"
     assert result["review_notes"] == "Sent manually on LinkedIn"
     assert client.rows["email_delivery_attempts"] == []
+
+
+def test_archived_previous_step_does_not_advance_followup():
+    client = FakeClient()
+    add_draft(client, step=1, status="archived")
+
+    result = create_next_followup_draft(
+        client,
+        lead_id="lead-review",
+        actor_id="user-1",
+        channel="email",
+    )
+
+    assert result.results["email"].created is False
+    assert result.results["email"].reason == "previous_step_not_sent_or_approved"
+
+
+def test_cancelled_previous_step_does_not_advance_followup():
+    client = FakeClient()
+    add_draft(client, step=1, status="cancelled")
+
+    result = create_next_followup_draft(
+        client,
+        lead_id="lead-review",
+        actor_id="user-1",
+        channel="email",
+    )
+
+    assert result.results["email"].created is False
+    assert result.results["email"].reason == "previous_step_not_sent_or_approved"
 
 
 def test_archive_precreated_followups_dry_run_does_not_update_data():
@@ -269,6 +331,17 @@ def test_archive_precreated_followups_dry_run_does_not_update_data():
     assert result.draft_ids == [step_two["id"]]
     assert step_two["status"] == "draft"
     assert client.updates == {}
+
+
+def test_archive_precreated_followups_marks_archived_when_executed():
+    client = FakeClient()
+    add_draft(client, step=1, status="draft")
+    step_two = add_draft(client, step=2, status="draft")
+
+    result = archive_precreated_followup_drafts(client, dry_run=False)
+
+    assert result.updated == 1
+    assert step_two["status"] == "archived"
 
 
 def test_refresh_bad_primary_drafts_updates_only_bad_draft_copy():

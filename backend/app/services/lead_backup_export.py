@@ -139,7 +139,6 @@ def build_lead_backup_rows(
     drafts = _drafts_by_lead(client, lead_ids)
     replies = _replies_by_lead(client, lead_ids)
     sent_counts = _system_sent_counts(client, lead_ids)
-
     return [
         _row_for_lead(
             lead,
@@ -339,7 +338,7 @@ def _row_for_lead(
         "rejected_count": _status_count(drafts, "rejected"),
         "draft_count": _status_count(drafts, "draft"),
         "manually_sent_count": _manual_sent_count(drafts),
-        "system_sent_count": system_sent_count,
+        "system_sent_count": system_sent_count + _status_count(drafts, "system_sent"),
         "lead_replied": bool(replies),
         "latest_reply_at": _string(_latest_reply_at(replies)),
     }
@@ -373,8 +372,11 @@ def _manual_sent_count(drafts: list[dict[str, Any]]) -> int:
     return sum(
         1
         for draft in drafts
-        if "manual" in str(draft.get("review_notes") or "").casefold()
-        and str(draft.get("status") or "") == "approved"
+        if str(draft.get("status") or "") == "manual_sent"
+        or (
+            "manual" in str(draft.get("review_notes") or "").casefold()
+            and str(draft.get("status") or "") == "approved"
+        )
     )
 
 

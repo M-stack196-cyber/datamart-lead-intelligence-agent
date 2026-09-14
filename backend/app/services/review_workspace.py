@@ -79,7 +79,7 @@ def review_outreach_draft_status(
     status = {
         "approve": "approved",
         "reject": "rejected",
-        "needs_edit": "draft",
+        "needs_edit": "needs_edit",
     }[normalized_action]
 
     rows = (
