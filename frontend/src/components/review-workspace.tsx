@@ -110,6 +110,7 @@ export function ReviewWorkspace() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [replyTrackingConnected, setReplyTrackingConnected] = useState<boolean | null>(null);
 
   const totals = useMemo(() => {
     const draftCount = leads.reduce((count, lead) => count + draftList(lead.outreach_drafts).length, 0);
@@ -157,6 +158,19 @@ export function ReviewWorkspace() {
       ].some((value) => String(value ?? "").toLocaleLowerCase().includes(search));
     });
   }, [leads, searchTerm]);
+
+  useEffect(() => {
+    let active = true;
+    fetch((process.env.NEXT_PUBLIC_API_URL || (process.env.NODE_ENV === "production" ? "/api" : "http://localhost:8000")) + "/health")
+      .then((response) => response.json())
+      .then((payload) => {
+        if (active) setReplyTrackingConnected(Boolean(payload.integrations_configured?.reply_tracking));
+      })
+      .catch(() => {
+        if (active) setReplyTrackingConnected(false);
+      });
+    return () => { active = false; };
+  }, []);
 
   const load = useCallback(async () => {
     if (!supabase) return;
@@ -235,6 +249,11 @@ export function ReviewWorkspace() {
 
       {error && <p role="alert" className="rounded-xl bg-red-50 p-4 text-sm text-red-800">{error}</p>}
       {message && <p role="status" className="rounded-xl bg-teal-50 p-4 text-sm text-teal-800">{message}</p>}
+      {replyTrackingConnected === false && (
+        <p role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-900">
+          Reply tracking integration not connected.
+        </p>
+      )}
 
       <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="grid gap-4 lg:grid-cols-[minmax(12rem,1fr)_minmax(10rem,0.5fr)_minmax(8rem,0.35fr)_auto]">

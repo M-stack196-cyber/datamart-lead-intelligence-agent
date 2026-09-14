@@ -90,6 +90,10 @@ class Settings(BaseSettings):
                 and self.outbound_reply_provider
                 and self.outbound_crm_provider
             ),
+            "reply_tracking": bool(
+                self.outbound_reply_provider
+                and self.outbound_reply_provider.casefold() != "mock"
+            ),
             "gmail": bool(
                 self.gmail_client_id
                 and self.gmail_client_secret

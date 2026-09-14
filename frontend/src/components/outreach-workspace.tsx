@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
-import { authenticatedFetch } from "@/lib/api";
+import { apiBase, authenticatedFetch } from "@/lib/api";
 import { CollectionSearchBar } from "@/components/collection-search-bar";
 
 type Score = {
@@ -184,6 +184,7 @@ export function OutreachWorkspace() {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [replyTrackingConnected, setReplyTrackingConnected] = useState<boolean | null>(null);
 
   const visibleLeads = useMemo(() => {
     const search = leadSearch.trim().toLocaleLowerCase();
@@ -199,6 +200,19 @@ export function OutreachWorkspace() {
       lead.latest_draft_status,
     ].some((value) => value?.toLocaleLowerCase().includes(search)));
   }, [leadSearch, leads]);
+
+  useEffect(() => {
+    let active = true;
+    fetch(apiBase() + "/health")
+      .then((response) => response.json())
+      .then((payload) => {
+        if (active) setReplyTrackingConnected(Boolean(payload.integrations_configured?.reply_tracking));
+      })
+      .catch(() => {
+        if (active) setReplyTrackingConnected(false);
+      });
+    return () => { active = false; };
+  }, []);
 
   const request = useCallback(
     async (
@@ -1487,12 +1501,11 @@ export function OutreachWorkspace() {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h2 className="font-bold text-slate-950">
-                    Sequence automation
+                    Team-controlled follow-up decisions
                   </h2>
 
                   <p className="mt-1 text-sm text-slate-500">
-                    Follow-up timing, progress, and execution history
-                    for this lead.
+                    Reply monitoring and follow-up history for this lead. Drafts and sends are never automatic.
                   </p>
                 </div>
 
@@ -1531,15 +1544,13 @@ export function OutreachWorkspace() {
 
                   <button
                     type="button"
-                    disabled={Boolean(busy)}
+                    disabled
                     onClick={() =>
                       void runDueFollowups()
                     }
-                    className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-bold text-white disabled:opacity-40"
+                    className="rounded-xl bg-slate-200 px-4 py-2 text-sm font-bold text-slate-500 disabled:cursor-not-allowed"
                   >
-                    {busy === "run-due"
-                      ? "Running..."
-                      : "Run due follow-ups"}
+                    Automatic follow-up sending disabled
                   </button>
                   </div>
                 )}
@@ -1547,9 +1558,7 @@ export function OutreachWorkspace() {
 
               {!sequence ? (
                 <p className="mt-5 text-sm text-slate-500">
-                  No active sequence yet. After the first approved
-                  email is sent, the next follow-up will be scheduled
-                  automatically.
+                  No active sequence yet. The team chooses whether and when to create any follow-up draft.
                 </p>
               ) : (
                 <>
@@ -1577,7 +1586,7 @@ export function OutreachWorkspace() {
 
                     <div className="rounded-2xl bg-slate-50 p-4">
                       <p className="text-xs font-semibold uppercase text-slate-500">
-                        Next follow-up
+                        Next decision
                       </p>
 
                       <p className="mt-2 text-sm font-bold text-slate-950">
@@ -1729,8 +1738,7 @@ export function OutreachWorkspace() {
 
                   <p className="mt-1 text-sm text-slate-500">
                     Inbound responses detected for this outreach
-                    sequence. Replies automatically stop future
-                    follow-ups.
+                    sequence. Replies stop future follow-up actions.
                   </p>
                 </div>
 
@@ -1749,6 +1757,18 @@ export function OutreachWorkspace() {
 
                   <p className="mt-1 text-sm text-teal-800">
                     Automated follow-ups have stopped for this lead.
+                  </p>
+                </div>
+              )}
+
+              {replyTrackingConnected === false && (
+                <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                  <p className="font-bold text-amber-900">
+                    Reply tracking integration not connected.
+                  </p>
+
+                  <p className="mt-1 text-sm text-amber-800">
+                    Reply checks should run every 5 minutes once a real reply provider is connected.
                   </p>
                 </div>
               )}
