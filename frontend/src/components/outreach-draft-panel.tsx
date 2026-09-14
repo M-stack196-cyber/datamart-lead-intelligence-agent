@@ -9,7 +9,7 @@ export type OutreachDraft = {
   channel: "email" | "linkedin";
   subject: string | null;
   body: string;
-  status: "draft" | "approved" | "rejected";
+  status: "draft" | "needs_edit" | "approved" | "rejected" | "archived" | "cancelled" | "manual_sent" | "system_sent" | "sent";
   sequence_step: number;
   evidence_ids: string[];
   created_by: string | null;

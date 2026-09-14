@@ -32,6 +32,7 @@ type Score = {
 type DraftGroups = {
   email: Record<"step_1" | "step_2" | "step_3" | "step_4", OutreachDraft | null>;
   linkedin: Record<"step_1" | "step_2" | "step_3" | "step_4", OutreachDraft | null>;
+  archived?: OutreachDraft[];
 };
 
 type Lead = {
@@ -64,6 +65,10 @@ function draftList(groups: DraftGroups): OutreachDraft[] {
   return stepKeys
     .flatMap((step) => [groups.email[step], groups.linkedin[step]])
     .filter(Boolean) as OutreachDraft[];
+}
+
+function archivedDraftList(groups: DraftGroups): OutreachDraft[] {
+  return groups.archived ?? [];
 }
 
 function firstDomain(url: string | null) {
@@ -113,13 +118,14 @@ export function ReviewWorkspace() {
   const [replyTrackingConnected, setReplyTrackingConnected] = useState<boolean | null>(null);
 
   const totals = useMemo(() => {
-    const draftCount = leads.reduce((count, lead) => count + draftList(lead.outreach_drafts).length, 0);
+    const activeDraftCount = leads.reduce((count, lead) => count + draftList(lead.outreach_drafts).length, 0);
+    const archivedDraftCount = leads.reduce((count, lead) => count + archivedDraftList(lead.outreach_drafts).length, 0);
     const reviewDrafts = leads.reduce(
       (count, lead) =>
         count + draftList(lead.outreach_drafts).filter((draft) => draft.status === "draft").length,
       0,
     );
-    return { draftCount, reviewDrafts };
+    return { activeDraftCount, archivedDraftCount, reviewDrafts };
   }, [leads]);
 
   const visibleLeads = useMemo(() => {
@@ -127,7 +133,7 @@ export function ReviewWorkspace() {
     if (!search) return leads;
     return leads.filter((lead) => {
       const score = lead.latest_score;
-      const drafts = draftList(lead.outreach_drafts);
+      const drafts = [...draftList(lead.outreach_drafts), ...archivedDraftList(lead.outreach_drafts)];
       return [
         lead.person_name,
         lead.title,
@@ -300,8 +306,9 @@ export function ReviewWorkspace() {
         </div>
         <div className="mt-4 grid gap-3 text-sm md:grid-cols-3">
           <p className="rounded-xl bg-slate-50 p-3"><span className="font-bold">{leads.length}</span> leads loaded</p>
-          <p className="rounded-xl bg-slate-50 p-3"><span className="font-bold">{totals.draftCount}</span> stored drafts</p>
-          <p className="rounded-xl bg-slate-50 p-3"><span className="font-bold">{totals.reviewDrafts}</span> drafts pending review</p>
+          <p className="rounded-xl bg-slate-50 p-3"><span className="font-bold">{totals.activeDraftCount}</span> active drafts</p>
+          <p className="rounded-xl bg-slate-50 p-3"><span className="font-bold">{totals.archivedDraftCount}</span> archived drafts</p>
+          <p className="rounded-xl bg-slate-50 p-3"><span className="font-bold">{totals.reviewDrafts}</span> pending review</p>
         </div>
       </div>
       {!loading && leads.length > 0 && (
@@ -327,6 +334,7 @@ export function ReviewWorkspace() {
           {visibleLeads.map((lead) => {
             const score = lead.latest_score;
             const drafts = draftList(lead.outreach_drafts);
+            const archivedDrafts = archivedDraftList(lead.outreach_drafts);
             const reasons = score?.review_reasons?.length
               ? score.review_reasons
               : score?.hard_stops?.length
@@ -359,7 +367,8 @@ export function ReviewWorkspace() {
                     </div>
                     <div className="rounded-2xl bg-slate-50 p-4">
                       <p className="text-xs font-bold uppercase text-slate-500">Drafts</p>
-                      <p className="mt-1 text-2xl font-black text-slate-950">{drafts.length}/8</p>
+                      <p className="mt-1 text-2xl font-black text-slate-950">{drafts.length}</p>
+                      <p className="mt-1 text-xs text-slate-500">{archivedDrafts.length} archived</p>
                     </div>
                   </div>
                 </div>
@@ -425,21 +434,51 @@ export function ReviewWorkspace() {
                 </button>
 
                 {expanded[lead.id] && (
-                  <OutreachDraftPanel
-                    leadId={lead.id}
-                    role={role}
-                    drafts={drafts}
-                    evidence={[]}
-                    recipient={lead.email}
-                    salesApproved={false}
-                    onChanged={async () => {
-                      setMessage("Draft status updated.");
-                      await load();
-                    }}
-                    allowGenerate={false}
-                    allowSendActions={false}
-                    allowManualSend
-                  />
+                  <>
+                    <p className="mt-4 rounded-xl bg-slate-50 p-3 text-xs font-semibold text-slate-600">
+                      Only active drafts are shown here. Archived/rejected drafts are kept for history.
+                    </p>
+                    <OutreachDraftPanel
+                      leadId={lead.id}
+                      role={role}
+                      drafts={drafts}
+                      evidence={[]}
+                      recipient={lead.email}
+                      salesApproved={false}
+                      onChanged={async () => {
+                        setMessage("Draft status updated.");
+                        await load();
+                      }}
+                      allowGenerate={false}
+                      allowSendActions={false}
+                      allowManualSend
+                    />
+                    {archivedDrafts.length > 0 && (
+                      <details className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <summary className="cursor-pointer text-sm font-bold text-slate-800">
+                          Archived / inactive drafts ({archivedDrafts.length})
+                        </summary>
+                        <div className="mt-4 space-y-3">
+                          {archivedDrafts
+                            .slice()
+                            .sort((first, second) => first.sequence_step - second.sequence_step || first.channel.localeCompare(second.channel))
+                            .map((draft) => (
+                              <article key={draft.id} className="rounded-xl border border-slate-200 bg-white p-4">
+                                <div className="flex flex-wrap items-center justify-between gap-3">
+                                  <p className="text-sm font-bold capitalize text-slate-900">{draft.channel} · step {draft.sequence_step}</p>
+                                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold capitalize text-slate-600">{draft.status}</span>
+                                </div>
+                                {draft.subject && <p className="mt-3 text-sm font-semibold text-slate-800">{draft.subject}</p>}
+                                <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-600">{draft.body}</p>
+                                {draft.review_notes && (
+                                  <p className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">Review notes: {draft.review_notes}</p>
+                                )}
+                              </article>
+                            ))}
+                        </div>
+                      </details>
+                    )}
+                  </>
                 )}
               </article>
             );

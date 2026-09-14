@@ -6,6 +6,8 @@ from typing import Any
 
 
 DraftAction = str
+ACTIVE_DRAFT_STATUSES = {"draft", "needs_edit", "approved", "manual_sent", "system_sent", "sent"}
+TERMINAL_DRAFT_STATUSES = {"rejected", "archived", "cancelled"}
 
 
 @dataclass(frozen=True)
@@ -167,9 +169,10 @@ def _replied_lead_ids(client: Any, lead_ids: list[str]) -> set[str]:
 
 
 def _group_drafts(rows: list[dict[str, Any]]) -> dict[str, dict[str, dict[str, Any] | None]]:
-    grouped: dict[str, dict[str, dict[str, Any] | None]] = {
+    grouped: dict[str, Any] = {
         "email": {f"step_{step}": None for step in range(1, 5)},
         "linkedin": {f"step_{step}": None for step in range(1, 5)},
+        "archived": [],
     }
     for row in rows:
         channel = str(row.get("channel") or "")
@@ -177,9 +180,21 @@ def _group_drafts(rows: list[dict[str, Any]]) -> dict[str, dict[str, dict[str, A
             step = int(str(row.get("sequence_step") or ""))
         except ValueError:
             continue
-        if channel in grouped and 1 <= step <= 4:
-            grouped[channel][f"step_{step}"] = row
+        if channel not in {"email", "linkedin"} or step not in {1, 2, 3, 4}:
+            continue
+        status = str(row.get("status") or "")
+        if status in TERMINAL_DRAFT_STATUSES:
+            grouped["archived"].append(row)
+            continue
+        if status in ACTIVE_DRAFT_STATUSES:
+            existing = grouped[channel][f"step_{step}"]
+            if existing is None or _draft_sort_key(row) > _draft_sort_key(existing):
+                grouped[channel][f"step_{step}"] = row
     return grouped
+
+
+def _draft_sort_key(row: dict[str, Any]) -> str:
+    return str(row.get("updated_at") or row.get("created_at") or "")
 
 
 def _now_sql() -> str:

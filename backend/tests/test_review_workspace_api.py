@@ -138,6 +138,54 @@ class FakeClient:
                     "updated_at": "2026-09-11T02:00:00Z",
                 },
                 {
+                    "id": "draft-email-2-archived",
+                    "lead_id": "lead-review",
+                    "channel": "email",
+                    "subject": "Old follow-up",
+                    "body": "Old body",
+                    "status": "archived",
+                    "sequence_step": 2,
+                    "evidence_ids": [],
+                    "created_by": None,
+                    "reviewed_by": None,
+                    "reviewed_at": "2026-09-11T02:30:00Z",
+                    "review_notes": "Archived old follow-up",
+                    "created_at": "2026-09-11T02:00:00Z",
+                    "updated_at": "2026-09-11T02:30:00Z",
+                },
+                {
+                    "id": "draft-email-3-rejected",
+                    "lead_id": "lead-review",
+                    "channel": "email",
+                    "subject": "Rejected follow-up",
+                    "body": "Rejected body",
+                    "status": "rejected",
+                    "sequence_step": 3,
+                    "evidence_ids": [],
+                    "created_by": None,
+                    "reviewed_by": None,
+                    "reviewed_at": "2026-09-11T02:30:00Z",
+                    "review_notes": "Rejected old follow-up",
+                    "created_at": "2026-09-11T02:00:00Z",
+                    "updated_at": "2026-09-11T02:30:00Z",
+                },
+                {
+                    "id": "draft-linkedin-3-cancelled",
+                    "lead_id": "lead-review",
+                    "channel": "linkedin",
+                    "subject": None,
+                    "body": "Cancelled body",
+                    "status": "cancelled",
+                    "sequence_step": 3,
+                    "evidence_ids": [],
+                    "created_by": None,
+                    "reviewed_by": None,
+                    "reviewed_at": "2026-09-11T02:30:00Z",
+                    "review_notes": "Cancelled old follow-up",
+                    "created_at": "2026-09-11T02:00:00Z",
+                    "updated_at": "2026-09-11T02:30:00Z",
+                },
+                {
                     "id": "draft-linkedin-4",
                     "lead_id": "lead-review",
                     "channel": "linkedin",
@@ -198,6 +246,14 @@ async def test_review_workspace_endpoint_returns_grouped_drafts_and_filters_defa
     assert lead["latest_score"]["score"] == 80
     assert lead["outreach_drafts"]["email"]["step_1"]["id"] == "draft-email-1"
     assert lead["outreach_drafts"]["linkedin"]["step_4"]["id"] == "draft-linkedin-4"
+    assert lead["outreach_drafts"]["email"]["step_2"] is None
+    assert lead["outreach_drafts"]["email"]["step_3"] is None
+    archived = lead["outreach_drafts"]["archived"]
+    assert {draft["id"] for draft in archived} == {
+        "draft-email-2-archived",
+        "draft-email-3-rejected",
+        "draft-linkedin-3-cancelled",
+    }
 
 
 @pytest.mark.anyio
