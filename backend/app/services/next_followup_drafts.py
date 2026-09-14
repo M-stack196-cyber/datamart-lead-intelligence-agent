@@ -291,6 +291,23 @@ def _next_for_channel(
             sequence_step=next_step,
             draft=existing,
         )
+    terminal_existing = _terminal_draft_for_channel_step(drafts, channel, next_step)
+    if terminal_existing:
+        reactivated = _reactivate_terminal_followup_draft(
+            client,
+            terminal_existing,
+            lead,
+            score,
+            channel,
+            next_step,
+        )
+        return NextFollowupChannelResult(
+            channel=channel,
+            created=True,
+            reason="reactivated_existing_terminal_draft",
+            sequence_step=next_step,
+            draft=reactivated,
+        )
 
     draft = _followup_draft_for_channel(lead, score, channel, next_step)
     payload = {
@@ -432,6 +449,51 @@ def _draft_for_channel_step(
         ):
             return draft
     return None
+
+
+def _terminal_draft_for_channel_step(
+    drafts: list[dict[str, Any]],
+    channel: str,
+    sequence_step: int,
+) -> dict[str, Any] | None:
+    for draft in drafts:
+        if (
+            str(draft.get("channel") or "") == channel
+            and _step(draft) == sequence_step
+            and _is_terminal(draft)
+        ):
+            return draft
+    return None
+
+
+def _reactivate_terminal_followup_draft(
+    client: Any,
+    draft: dict[str, Any],
+    lead: dict[str, Any],
+    score: dict[str, Any],
+    channel: DraftChannel,
+    sequence_step: int,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "status": "draft",
+        "reviewed_by": None,
+        "reviewed_at": None,
+        "review_notes": "Reactivated as next follow-up draft by team after previous step was sent-like.",
+    }
+    if not str(draft.get("body") or "").strip():
+        regenerated = _followup_draft_for_channel(lead, score, channel, sequence_step)
+        payload["subject"] = regenerated["subject"]
+        payload["body"] = regenerated["body"]
+
+    rows = (
+        client.table("outreach_drafts")
+        .update(payload)
+        .eq("id", draft["id"])
+        .execute()
+        .data
+        or []
+    )
+    return rows[0] if rows and isinstance(rows[0], dict) else {**draft, **payload}
 
 
 def _step(draft: dict[str, Any]) -> int | None:

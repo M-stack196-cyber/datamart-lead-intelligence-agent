@@ -217,6 +217,8 @@ export function ReviewWorkspace() {
         setMessage("Review and send previous step before creating next follow-up.");
       } else if (result?.reason === "existing_draft") {
         setMessage("The next follow-up draft already exists.");
+      } else if (result?.reason === "reactivated_existing_terminal_draft") {
+        setMessage("Next follow-up draft reactivated for review.");
       } else if (result?.reason === "sequence_complete") {
         setMessage("Sequence complete.");
       } else {

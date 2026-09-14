@@ -221,11 +221,11 @@ def test_existing_next_step_is_returned_without_duplicate_insert():
     assert client.inserts.get("outreach_drafts") is None
 
 
-def test_terminal_next_step_does_not_block_fresh_followup_after_manual_send():
+def test_terminal_next_step_is_reactivated_after_manual_send():
     for status in ("rejected", "archived", "cancelled"):
         client = FakeClient()
         add_draft(client, step=1, status="manual_sent")
-        add_draft(client, step=2, status=status)
+        terminal = add_draft(client, step=2, status=status)
 
         result = create_next_followup_draft(
             client,
@@ -235,8 +235,35 @@ def test_terminal_next_step_does_not_block_fresh_followup_after_manual_send():
         )
 
         assert result.results["email"].created is True
+        assert result.results["email"].reason == "reactivated_existing_terminal_draft"
         assert result.results["email"].sequence_step == 2
-        assert client.inserts["outreach_drafts"][0]["sequence_step"] == 2
+        assert terminal["status"] == "draft"
+        assert terminal["reviewed_by"] is None
+        assert terminal["reviewed_at"] is None
+        assert terminal["review_notes"] == (
+            "Reactivated as next follow-up draft by team after previous step was sent-like."
+        )
+        assert client.inserts.get("outreach_drafts") is None
+
+
+def test_terminal_next_step_with_empty_body_is_reactivated_with_regenerated_copy():
+    client = FakeClient()
+    add_draft(client, step=1, status="manual_sent")
+    terminal = add_draft(client, step=2, status="rejected", body="")
+    terminal["subject"] = ""
+
+    result = create_next_followup_draft(
+        client,
+        lead_id="lead-review",
+        actor_id="user-1",
+        channel="email",
+    )
+
+    assert result.results["email"].reason == "reactivated_existing_terminal_draft"
+    assert terminal["status"] == "draft"
+    assert terminal["subject"]
+    assert terminal["body"]
+    assert "Would it be worth a quick 10-minute conversation?" in terminal["body"]
 
 
 def test_needs_edit_primary_does_not_allow_followup():
@@ -338,6 +365,7 @@ def test_manual_send_marks_draft_as_manual_sent_without_provider_send():
     assert result["reviewed_by"] == "user-1"
     assert result["review_notes"] == "Sent manually on LinkedIn"
     assert client.rows["email_delivery_attempts"] == []
+    assert client.inserts.get("outreach_drafts") is None
 
 
 def test_archived_previous_step_does_not_advance_followup():
