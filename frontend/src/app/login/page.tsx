@@ -9,7 +9,13 @@ export default function LoginPage() {
   const supabase = useMemo(() => createBrowserSupabaseClient(), []);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(() => {
+    if (typeof window === "undefined") return "";
+    const storedMessage = window.sessionStorage.getItem("datamart_auth_message");
+    if (!storedMessage) return "";
+    window.sessionStorage.removeItem("datamart_auth_message");
+    return storedMessage;
+  });
   const [loading, setLoading] = useState(false);
 
   async function signIn(event: FormEvent<HTMLFormElement>) {

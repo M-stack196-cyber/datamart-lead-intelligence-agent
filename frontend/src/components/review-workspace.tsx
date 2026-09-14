@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { authenticatedFetch } from "@/lib/api";
 import { CollectionSearchBar } from "@/components/collection-search-bar";
 import { OutreachDraftPanel, type OutreachDraft } from "@/components/outreach-draft-panel";
 
@@ -58,10 +59,6 @@ type Lead = {
 const stepKeys = ["step_1", "step_2", "step_3", "step_4"] as const;
 const activeDraftStatuses = new Set(["draft", "needs_edit", "approved", "manual_sent", "system_sent", "sent"]);
 const sentLikeDraftStatuses = new Set(["approved", "manual_sent", "system_sent", "sent"]);
-
-function apiBase() {
-  return process.env.NEXT_PUBLIC_API_URL || (process.env.NODE_ENV === "production" ? "/api" : "http://localhost:8000");
-}
 
 function draftList(groups: DraftGroups): OutreachDraft[] {
   return stepKeys
@@ -166,10 +163,6 @@ export function ReviewWorkspace() {
     setLoading(true);
     setError("");
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
-      if (!token) throw new Error("Authentication required");
-
       const { data: userData } = await supabase.auth.getUser();
       if (userData.user) {
         const profile = await supabase.from("profiles").select("role").eq("id", userData.user.id).single();
@@ -182,9 +175,7 @@ export function ReviewWorkspace() {
         limit: String(limit),
         include_drafts: "true",
       });
-      const response = await fetch(`${apiBase()}/leads/review-workspace?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await authenticatedFetch(supabase, `/leads/review-workspace?${params.toString()}`);
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.detail || "Unable to load review workspace");
       setLeads((payload.leads ?? []) as Lead[]);
@@ -200,12 +191,8 @@ export function ReviewWorkspace() {
     setError("");
     setMessage("");
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
-      if (!token) throw new Error("Authentication required");
-      const response = await fetch(`${apiBase()}/leads/${leadId}/outreach/next-followup-draft`, {
+      const response = await authenticatedFetch(supabase, `/leads/${leadId}/outreach/next-followup-draft`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ channel, source }),
       });
       const payload = await response.json().catch(() => ({}));

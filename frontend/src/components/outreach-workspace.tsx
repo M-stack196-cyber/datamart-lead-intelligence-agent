@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { authenticatedFetch } from "@/lib/api";
 import { CollectionSearchBar } from "@/components/collection-search-bar";
 
 type Score = {
@@ -159,9 +160,6 @@ type OutreachAnalytics = {
 
 type Role = "admin" | "manager" | "sales";
 
-const apiUrl =
-  process.env.NEXT_PUBLIC_API_URL || (process.env.NODE_ENV === "production" ? "/api" : "http://localhost:8000");
-
 export function OutreachWorkspace() {
   const supabase = useMemo(
     () => createBrowserSupabaseClient(),
@@ -213,31 +211,7 @@ export function OutreachWorkspace() {
         );
       }
 
-      const { data } =
-        await supabase.auth.getSession();
-
-      const token =
-        data.session?.access_token;
-
-      if (!token) {
-        throw new Error(
-          "Authentication required",
-        );
-      }
-
-      const response = await fetch(
-        apiUrl + path,
-        {
-          ...init,
-          headers: {
-            Authorization:
-              "Bearer " + token,
-            "Content-Type":
-              "application/json",
-            ...init?.headers,
-          },
-        },
-      );
+      const response = await authenticatedFetch(supabase, path, init);
 
       const payload = await response
         .json()

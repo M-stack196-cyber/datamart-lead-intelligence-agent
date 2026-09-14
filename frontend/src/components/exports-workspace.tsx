@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createBrowserSupabaseClient } from "@/lib/supabase/client";
+import { authenticatedFetch } from "@/lib/api";
 import { CollectionSearchBar } from "@/components/collection-search-bar";
 
 type ExportLead = {
@@ -74,8 +75,6 @@ type BackupPreview = {
   leads: BackupLead[];
 };
 const esc = (value: string | number | null) => '"' + String(value ?? "").replaceAll('"', '""') + '"';
-const apiBase = () => process.env.NEXT_PUBLIC_API_URL || (process.env.NODE_ENV === "production" ? "/api" : "http://localhost:8000");
-
 export function ExportsWorkspace() {
   const supabase = useMemo(() => createBrowserSupabaseClient(), []);
   const [role, setRole] = useState<Role | null>(null);
@@ -212,15 +211,10 @@ export function ExportsWorkspace() {
     setBackupBusy(true);
     setError("");
     try {
-      const { data } = await supabase.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) throw new Error("Authentication required");
       const params = new URLSearchParams({ limit: "1000", format: "csv" });
       if (backupSource !== "all") params.set("source", backupSource);
       if (backupStatus !== "all") params.set("status", backupStatus);
-      const response = await fetch(`${apiBase()}/leads/backup-export?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await authenticatedFetch(supabase, `/leads/backup-export?${params.toString()}`);
       if (!response.ok) {
         const payload = await response.json().catch(() => ({}));
         throw new Error(payload.detail || "Unable to download lead backup");
@@ -246,15 +240,10 @@ export function ExportsWorkspace() {
     setPreviewBusy(true);
     setError("");
     try {
-      const { data } = await supabase.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) throw new Error("Authentication required");
       const params = new URLSearchParams({ limit: "1000" });
       if (backupSource !== "all") params.set("source", backupSource);
       if (backupStatus !== "all") params.set("status", backupStatus);
-      const response = await fetch(`${apiBase()}/leads/backup-preview?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await authenticatedFetch(supabase, `/leads/backup-preview?${params.toString()}`);
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.detail || "Unable to load lead backup preview");
       setBackupPreview(payload as BackupPreview);
