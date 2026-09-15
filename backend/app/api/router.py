@@ -21,6 +21,7 @@ from app.schemas.outreach import (
     NextFollowupDraftRequest,
     PauseSequenceRequest,
     PrimaryDraftRequest,
+    ReplyWaitRequest,
     ReviewOutreachRequest,
     RunDueFollowupsRequest,
     SaveOutreachDraftRequest,
@@ -70,6 +71,8 @@ from app.services.review_workspace import (
 from app.services.next_followup_drafts import (
     create_next_followup_draft,
     mark_draft_manually_sent,
+    stop_draft_followup,
+    update_draft_reply_wait,
 )
 from app.services.primary_outreach_drafts import create_primary_outreach_draft
 from app.services.lead_backup_export import build_lead_backup_csv, build_lead_backup_preview
@@ -283,13 +286,30 @@ def _send_approved_email(settings: Settings, actor_id: str, draft_id: str) -> di
         .execute()
         .data
     )
-    client.table("outreach_drafts").update(
-        {
-            "status": "system_sent",
-            "reviewed_by": actor_id,
-            "reviewed_at": _now_sql(),
-        }
-    ).eq("id", draft_id).execute()
+    try:
+        draft_rows = (
+            client.table("outreach_drafts")
+            .select("sent_at")
+            .eq("id", draft_id)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+    except AttributeError:
+        draft_rows = []
+    existing_sent_at = draft_rows[0].get("sent_at") if draft_rows and isinstance(draft_rows[0], dict) else None
+    try:
+        client.table("outreach_drafts").update(
+            {
+                "status": "system_sent",
+                "reviewed_by": actor_id,
+                "reviewed_at": _now_sql(),
+                "sent_at": existing_sent_at or _now_sql(),
+            }
+        ).eq("id", draft_id).execute()
+    except AttributeError:
+        pass
     return {
         "status": "sent",
         "attempt_id": attempt["attempt_id"],
@@ -349,6 +369,35 @@ def _mark_manual_send(
         draft_id=draft_id,
         actor_id=actor_id,
         notes=request.review_notes,
+        reply_wait_days=request.reply_wait_days,
+        next_followup_decision_at=request.next_followup_decision_at,
+    )
+
+
+def _update_reply_wait(
+    settings: Settings,
+    actor_id: str,
+    draft_id: str,
+    request: ReplyWaitRequest,
+) -> dict:
+    return update_draft_reply_wait(
+        _backend_client(settings),
+        draft_id=draft_id,
+        actor_id=actor_id,
+        reply_wait_days=request.reply_wait_days,
+        next_followup_decision_at=request.next_followup_decision_at,
+    )
+
+
+def _stop_followup(
+    settings: Settings,
+    actor_id: str,
+    draft_id: str,
+) -> dict:
+    return stop_draft_followup(
+        _backend_client(settings),
+        draft_id=draft_id,
+        actor_id=actor_id,
     )
 
 
@@ -375,6 +424,7 @@ def _create_next_followup(
                 "reason": item.reason,
                 "sequence_step": item.sequence_step,
                 "draft": item.draft,
+                "message": item.message,
             }
             for channel, item in result.results.items()
         },
@@ -1260,6 +1310,39 @@ async def mark_outreach_draft_manually_sent(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail="Unable to mark draft as manually sent") from exc
+
+
+@router.patch("/outreach-drafts/{draft_id}/reply-wait", tags=["outreach"])
+async def update_outreach_draft_reply_wait(
+    draft_id: str,
+    request: ReplyWaitRequest,
+    user: CurrentUser = Depends(require_roles("admin", "manager", "sales")),
+) -> dict:
+    """Set or extend the team-selected reply wait before follow-up draft decisions."""
+    try:
+        return _update_reply_wait(get_settings(), user.id, draft_id, request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Unable to update reply wait") from exc
+
+
+@router.patch("/outreach-drafts/{draft_id}/stop-followup", tags=["outreach"])
+async def stop_outreach_draft_followup(
+    draft_id: str,
+    user: CurrentUser = Depends(require_roles("admin", "manager", "sales")),
+) -> dict:
+    """Record a team decision to stop future follow-up after a sent draft."""
+    try:
+        return _stop_followup(get_settings(), user.id, draft_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Unable to stop follow-up") from exc
 
 
 @router.post("/leads/{lead_id}/outreach/next-followup-draft", tags=["outreach"])

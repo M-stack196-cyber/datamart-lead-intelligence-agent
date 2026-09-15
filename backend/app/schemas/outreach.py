@@ -21,6 +21,13 @@ class DraftStatusReviewRequest(BaseModel):
 
 class ManualSendRequest(BaseModel):
     review_notes: str | None = Field(default=None, max_length=2000)
+    reply_wait_days: int | None = Field(default=None, ge=1, le=365)
+    next_followup_decision_at: datetime | None = None
+
+
+class ReplyWaitRequest(BaseModel):
+    reply_wait_days: int | None = Field(default=None, ge=1, le=365)
+    next_followup_decision_at: datetime | None = None
 
 
 class NextFollowupDraftRequest(BaseModel):

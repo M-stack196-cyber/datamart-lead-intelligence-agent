@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from datetime import datetime, timezone
 
 from app.services.next_followup_drafts import (
     archive_precreated_followup_drafts,
@@ -97,7 +98,15 @@ class FakeClient:
         return FakeQuery(self, name)
 
 
-def add_draft(client, *, step, channel="email", status="draft", body="Hi Maya"):
+def add_draft(
+    client,
+    *,
+    step,
+    channel="email",
+    status="draft",
+    body="Hi Maya",
+    next_followup_decision_at="2026-09-01T00:00:00Z",
+):
     row = {
         "id": f"{channel}-{step}",
         "lead_id": "lead-review",
@@ -108,6 +117,14 @@ def add_draft(client, *, step, channel="email", status="draft", body="Hi Maya"):
         "status": status,
         "evidence_ids": [],
         "review_notes": None,
+        "sent_at": "2026-08-29T00:00:00Z" if status in {"approved", "system_sent", "sent"} else None,
+        "manual_sent_at": "2026-08-29T00:00:00Z" if status == "manual_sent" else None,
+        "reply_wait_days": 4 if status in {"approved", "manual_sent", "system_sent", "sent"} and next_followup_decision_at else None,
+        "next_followup_decision_at": (
+            next_followup_decision_at if status in {"approved", "manual_sent", "system_sent", "sent"} else None
+        ),
+        "followup_stopped_at": None,
+        "followup_stop_reason": None,
     }
     client.rows["outreach_drafts"].append(row)
     return row
@@ -164,6 +181,40 @@ def test_next_followup_creates_step_two_after_previous_is_manual_sent():
     assert email.sequence_step == 2
 
 
+def test_next_followup_blocks_before_reply_wait_decision_time():
+    client = FakeClient()
+    add_draft(client, step=1, status="manual_sent", next_followup_decision_at="2999-09-01T00:00:00Z")
+
+    result = create_next_followup_draft(
+        client,
+        lead_id="lead-review",
+        actor_id="user-1",
+        channel="email",
+    )
+
+    email = result.results["email"]
+    assert email.created is False
+    assert email.reason == "waiting_for_reply"
+    assert client.inserts.get("outreach_drafts") is None
+
+
+def test_next_followup_blocks_when_reply_wait_decision_time_is_missing():
+    client = FakeClient()
+    add_draft(client, step=1, status="manual_sent", next_followup_decision_at=None)
+
+    result = create_next_followup_draft(
+        client,
+        lead_id="lead-review",
+        actor_id="user-1",
+        channel="email",
+    )
+
+    email = result.results["email"]
+    assert email.created is False
+    assert email.reason == "reply_wait_not_set"
+    assert client.inserts.get("outreach_drafts") is None
+
+
 def test_next_followup_creates_step_two_after_previous_is_system_sent():
     client = FakeClient()
     add_draft(client, step=1, status="system_sent")
@@ -180,7 +231,7 @@ def test_next_followup_creates_step_two_after_previous_is_system_sent():
     assert email.sequence_step == 2
 
 
-def test_system_sent_attempt_allows_next_followup_even_if_draft_status_is_draft():
+def test_system_sent_attempt_requires_reply_wait_timing_even_if_delivery_attempt_is_sent():
     client = FakeClient()
     draft = add_draft(client, step=1, status="draft")
     client.rows["email_delivery_attempts"].append(
@@ -199,8 +250,9 @@ def test_system_sent_attempt_allows_next_followup_even_if_draft_status_is_draft(
         channel="email",
     )
 
-    assert result.results["email"].created is True
-    assert result.results["email"].sequence_step == 2
+    assert result.results["email"].created is False
+    assert result.results["email"].reason == "reply_wait_not_set"
+    assert client.inserts.get("outreach_drafts") is None
 
 
 def test_existing_next_step_is_returned_without_duplicate_insert():
@@ -316,6 +368,23 @@ def test_lead_reply_blocks_followup_even_when_primary_is_manual_sent():
     assert client.inserts.get("outreach_drafts") is None
 
 
+def test_lead_reply_blocks_followup_after_reply_wait_decision_time():
+    client = FakeClient()
+    add_draft(client, step=1, status="manual_sent", next_followup_decision_at="2026-09-01T00:00:00Z")
+    client.rows["inbound_reply_events"].append({"id": "reply-1", "lead_id": "lead-review"})
+
+    result = create_next_followup_draft(
+        client,
+        lead_id="lead-review",
+        actor_id="user-1",
+        channel="email",
+    )
+
+    assert result.results["email"].created is False
+    assert result.results["email"].reason == "lead_replied"
+    assert client.inserts.get("outreach_drafts") is None
+
+
 def test_sequence_stops_after_step_four():
     client = FakeClient()
     add_draft(client, step=4, status="approved")
@@ -359,13 +428,65 @@ def test_manual_send_marks_draft_as_manual_sent_without_provider_send():
         draft_id=draft["id"],
         actor_id="user-1",
         notes="Sent manually on LinkedIn",
+        reply_wait_days=4,
     )
 
     assert result["status"] == "manual_sent"
     assert result["reviewed_by"] == "user-1"
     assert result["review_notes"] == "Sent manually on LinkedIn"
+    assert result["manual_sent_at"]
+    assert result["reply_wait_days"] == 4
+    assert result["next_followup_decision_at"]
     assert client.rows["email_delivery_attempts"] == []
     assert client.inserts.get("outreach_drafts") is None
+
+
+def test_manual_send_with_reply_wait_days_sets_decision_from_manual_sent_at(monkeypatch):
+    client = FakeClient()
+    draft = add_draft(client, step=1, status="draft")
+    now = datetime(2026, 9, 15, 10, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr("app.services.next_followup_drafts._now", lambda: now)
+
+    result = mark_draft_manually_sent(
+        client,
+        draft_id=draft["id"],
+        actor_id="user-1",
+        reply_wait_days=4,
+    )
+
+    assert result["manual_sent_at"] == "2026-09-15T10:00:00Z"
+    assert result["reply_wait_days"] == 4
+    assert result["next_followup_decision_at"] == "2026-09-19T10:00:00Z"
+
+
+def test_manual_send_with_custom_decision_time_stores_custom_time(monkeypatch):
+    client = FakeClient()
+    draft = add_draft(client, step=1, status="draft")
+    now = datetime(2026, 9, 15, 10, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr("app.services.next_followup_drafts._now", lambda: now)
+
+    result = mark_draft_manually_sent(
+        client,
+        draft_id=draft["id"],
+        actor_id="user-1",
+        next_followup_decision_at="2026-09-20T12:30:00Z",
+    )
+
+    assert result["manual_sent_at"] == "2026-09-15T10:00:00Z"
+    assert result["reply_wait_days"] is None
+    assert result["next_followup_decision_at"] == "2026-09-20T12:30:00Z"
+
+
+def test_manual_send_requires_reply_wait_period():
+    client = FakeClient()
+    draft = add_draft(client, step=1, status="draft")
+
+    try:
+        mark_draft_manually_sent(client, draft_id=draft["id"], actor_id="user-1")
+    except ValueError as exc:
+        assert str(exc) == "Reply wait period is required"
+    else:
+        raise AssertionError("manual send should require reply wait period")
 
 
 def test_archived_previous_step_does_not_advance_followup():

@@ -90,6 +90,13 @@ function isSentLikeDraft(draft: OutreachDraft) {
   return sentLikeDraftStatuses.has(draft.status);
 }
 
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
+}
+
 function latestActiveDraftForChannel(drafts: OutreachDraft[], channel: "email" | "linkedin") {
   return drafts
     .filter((draft) => draft.channel === channel && isActiveDraft(draft))
@@ -97,17 +104,25 @@ function latestActiveDraftForChannel(drafts: OutreachDraft[], channel: "email" |
 }
 
 function followupMessage(lead: Lead, drafts: OutreachDraft[], channel: "email" | "linkedin") {
-  if (lead.has_replies) return "Lead replied - follow-up stopped";
+  if (lead.has_replies) return "Lead replied — follow-up stopped";
   const latest = latestActiveDraftForChannel(drafts, channel);
   if (!latest) return `No ${channel} draft exists yet.`;
   if (latest.sequence_step >= 4 && isSentLikeDraft(latest)) return "Sequence complete";
   if (!isSentLikeDraft(latest)) return `Review/send Step ${latest.sequence_step} before creating next follow-up`;
-  return `Create next ${channel} follow-up draft`;
+  if (latest.followup_stopped_at) return "Follow-up stopped";
+  const decisionAt = latest.next_followup_decision_at ? new Date(latest.next_followup_decision_at) : null;
+  if (!decisionAt || Number.isNaN(decisionAt.getTime())) return "Reply wait period not set";
+  if (decisionAt.getTime() > Date.now()) return `Waiting for reply until ${formatDateTime(latest.next_followup_decision_at)}`;
+  return "No reply yet — team decision needed";
 }
 
 function canCreateNextFollowup(lead: Lead, drafts: OutreachDraft[], channel: "email" | "linkedin") {
   const latest = latestActiveDraftForChannel(drafts, channel);
-  return Boolean(latest && isSentLikeDraft(latest) && latest.sequence_step < 4 && !lead.has_replies);
+  if (!latest || !isSentLikeDraft(latest) || latest.sequence_step >= 4 || lead.has_replies || latest.followup_stopped_at) {
+    return false;
+  }
+  const decisionAt = latest.next_followup_decision_at ? new Date(latest.next_followup_decision_at) : null;
+  return Boolean(decisionAt && !Number.isNaN(decisionAt.getTime()) && decisionAt.getTime() <= Date.now());
 }
 
 function isDraftCreationResult(value: DraftCreationResult | undefined): value is DraftCreationResult {
@@ -274,6 +289,41 @@ export function ReviewWorkspace() {
       setError(cause instanceof Error ? cause.message : "Unable to create next follow-up draft");
     }
   }, [load, source, supabase]);
+
+  const waitMoreDays = useCallback(async (draftId: string, days: number) => {
+    if (!supabase) return;
+    setError("");
+    setMessage("");
+    try {
+      const response = await authenticatedFetch(supabase, `/outreach-drafts/${draftId}/reply-wait`, {
+        method: "PATCH",
+        body: JSON.stringify({ reply_wait_days: days }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.detail || "Unable to update reply wait");
+      setMessage(`Reply wait extended by ${days} days.`);
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to update reply wait");
+    }
+  }, [load, supabase]);
+
+  const stopFollowup = useCallback(async (draftId: string) => {
+    if (!supabase) return;
+    setError("");
+    setMessage("");
+    try {
+      const response = await authenticatedFetch(supabase, `/outreach-drafts/${draftId}/stop-followup`, {
+        method: "PATCH",
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.detail || "Unable to stop follow-up");
+      setMessage("Follow-up stopped for this draft.");
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to stop follow-up");
+    }
+  }, [load, supabase]);
 
   useEffect(() => {
     const task = window.setTimeout(() => void load(), 0);
@@ -475,19 +525,41 @@ export function ReviewWorkspace() {
                             <p className="mt-2 text-sm text-slate-700">{followupMessage(lead, drafts, channel)}</p>
                           </div>
                           {canCreate && (
-                            <button
-                              type="button"
-                              onClick={() => void createNextFollowup(lead.id, channel)}
-                              className="rounded-lg border border-teal-300 px-3 py-2 text-xs font-bold text-teal-800"
-                            >
-                              Create next {channel === "email" ? "Email" : "LinkedIn"} follow-up draft
-                            </button>
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => void createNextFollowup(lead.id, channel)}
+                                className="rounded-lg border border-teal-300 px-3 py-2 text-xs font-bold text-teal-800"
+                              >
+                                Create next {channel === "email" ? "Email" : "LinkedIn"} follow-up draft
+                              </button>
+                              {latest && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => void waitMoreDays(latest.id, 4)}
+                                    className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold text-slate-800"
+                                  >
+                                    Wait more days
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => void stopFollowup(latest.id)}
+                                    className="rounded-lg border border-red-200 px-3 py-2 text-xs font-bold text-red-800"
+                                  >
+                                    Stop follow-up
+                                  </button>
+                                </>
+                              )}
+                            </div>
                           )}
                         </div>
                         {latest && (
-                          <p className="mt-2 text-xs text-slate-500">
-                            Latest active: step {latest.sequence_step}, {latest.status}
-                          </p>
+                          <div className="mt-2 space-y-1 text-xs text-slate-500">
+                            <p>Latest active: step {latest.sequence_step}, {latest.status}</p>
+                            {(latest.manual_sent_at || latest.sent_at) && <p>Sent: {formatDateTime(latest.manual_sent_at || latest.sent_at)}</p>}
+                            {latest.next_followup_decision_at && <p>Decision time: {formatDateTime(latest.next_followup_decision_at)}</p>}
+                          </div>
                         )}
                       </div>
                     );

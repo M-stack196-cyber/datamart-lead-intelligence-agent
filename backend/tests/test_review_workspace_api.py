@@ -138,6 +138,12 @@ class FakeClient:
                     "review_notes": None,
                     "created_at": "2026-09-11T02:00:00Z",
                     "updated_at": "2026-09-11T02:00:00Z",
+                    "sent_at": None,
+                    "manual_sent_at": None,
+                    "reply_wait_days": None,
+                    "next_followup_decision_at": None,
+                    "followup_stopped_at": None,
+                    "followup_stop_reason": None,
                 },
                 {
                     "id": "draft-email-2-archived",
@@ -154,6 +160,12 @@ class FakeClient:
                     "review_notes": "Archived old follow-up",
                     "created_at": "2026-09-11T02:00:00Z",
                     "updated_at": "2026-09-11T02:30:00Z",
+                    "sent_at": None,
+                    "manual_sent_at": None,
+                    "reply_wait_days": None,
+                    "next_followup_decision_at": None,
+                    "followup_stopped_at": None,
+                    "followup_stop_reason": None,
                 },
                 {
                     "id": "draft-email-3-rejected",
@@ -170,6 +182,12 @@ class FakeClient:
                     "review_notes": "Rejected old follow-up",
                     "created_at": "2026-09-11T02:00:00Z",
                     "updated_at": "2026-09-11T02:30:00Z",
+                    "sent_at": None,
+                    "manual_sent_at": None,
+                    "reply_wait_days": None,
+                    "next_followup_decision_at": None,
+                    "followup_stopped_at": None,
+                    "followup_stop_reason": None,
                 },
                 {
                     "id": "draft-linkedin-3-cancelled",
@@ -186,6 +204,12 @@ class FakeClient:
                     "review_notes": "Cancelled old follow-up",
                     "created_at": "2026-09-11T02:00:00Z",
                     "updated_at": "2026-09-11T02:30:00Z",
+                    "sent_at": None,
+                    "manual_sent_at": None,
+                    "reply_wait_days": None,
+                    "next_followup_decision_at": None,
+                    "followup_stopped_at": None,
+                    "followup_stop_reason": None,
                 },
                 {
                     "id": "draft-linkedin-4",
@@ -202,6 +226,12 @@ class FakeClient:
                     "review_notes": None,
                     "created_at": "2026-09-11T02:00:00Z",
                     "updated_at": "2026-09-11T02:00:00Z",
+                    "sent_at": None,
+                    "manual_sent_at": None,
+                    "reply_wait_days": None,
+                    "next_followup_decision_at": None,
+                    "followup_stopped_at": None,
+                    "followup_stop_reason": None,
                 },
             ],
             "email_delivery_attempts": [],
@@ -310,13 +340,17 @@ async def test_manual_send_endpoint_marks_manual_sent_without_sending():
             "sales",
             "PATCH",
             "/outreach-drafts/draft-email-1/manual-send",
-            {"review_notes": "Sent from personal inbox"},
+            {"review_notes": "Sent from personal inbox", "reply_wait_days": 4},
         )
 
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "manual_sent"
     assert body["review_notes"] == "Sent from personal inbox"
+    assert body["manual_sent_at"]
+    assert body["reply_wait_days"] == 4
+    assert body["next_followup_decision_at"]
+    assert "outreach_drafts" not in fake.inserts
     assert send.call_count == 0
 
 
@@ -468,6 +502,9 @@ async def test_primary_draft_endpoint_reactivates_terminal_primary_only_on_reque
 async def test_next_followup_endpoint_creates_next_draft_after_manual_send():
     fake = FakeClient()
     fake.rows["outreach_drafts"][0]["status"] = "manual_sent"
+    fake.rows["outreach_drafts"][0]["manual_sent_at"] = "2026-09-01T00:00:00Z"
+    fake.rows["outreach_drafts"][0]["reply_wait_days"] = 4
+    fake.rows["outreach_drafts"][0]["next_followup_decision_at"] = "2026-09-05T00:00:00Z"
     fake.rows["outreach_drafts"] = [fake.rows["outreach_drafts"][0]]
     with (
         patch("app.api.router._backend_client", return_value=fake),
@@ -492,6 +529,9 @@ async def test_next_followup_endpoint_creates_next_draft_after_manual_send():
 async def test_next_followup_endpoint_reactivates_terminal_email_draft():
     fake = FakeClient()
     fake.rows["outreach_drafts"][0]["status"] = "manual_sent"
+    fake.rows["outreach_drafts"][0]["manual_sent_at"] = "2026-09-01T00:00:00Z"
+    fake.rows["outreach_drafts"][0]["reply_wait_days"] = 4
+    fake.rows["outreach_drafts"][0]["next_followup_decision_at"] = "2026-09-05T00:00:00Z"
     fake.rows["outreach_drafts"][1]["channel"] = "email"
     fake.rows["outreach_drafts"][1]["sequence_step"] = 2
     fake.rows["outreach_drafts"][1]["status"] = "rejected"
@@ -522,6 +562,9 @@ async def test_next_followup_endpoint_reactivates_terminal_future_draft():
     fake = FakeClient()
     fake.rows["outreach_drafts"][0]["channel"] = "linkedin"
     fake.rows["outreach_drafts"][0]["status"] = "manual_sent"
+    fake.rows["outreach_drafts"][0]["manual_sent_at"] = "2026-09-01T00:00:00Z"
+    fake.rows["outreach_drafts"][0]["reply_wait_days"] = 4
+    fake.rows["outreach_drafts"][0]["next_followup_decision_at"] = "2026-09-05T00:00:00Z"
     fake.rows["outreach_drafts"][1]["channel"] = "linkedin"
     fake.rows["outreach_drafts"][1]["sequence_step"] = 2
     fake.rows["outreach_drafts"][1]["status"] = "rejected"

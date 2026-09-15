@@ -136,7 +136,9 @@ def _drafts_by_lead(client: Any, lead_ids: list[str]) -> dict[str, list[dict[str
         client.table("outreach_drafts")
         .select(
             "id,lead_id,channel,subject,body,status,sequence_step,evidence_ids,"
-            "created_by,reviewed_by,reviewed_at,review_notes,created_at,updated_at"
+            "created_by,reviewed_by,reviewed_at,review_notes,created_at,updated_at,"
+            "sent_at,manual_sent_at,reply_wait_days,next_followup_decision_at,"
+            "followup_stopped_at,followup_stop_reason"
         )
         .in_("lead_id", lead_ids)
         .order("sequence_step")

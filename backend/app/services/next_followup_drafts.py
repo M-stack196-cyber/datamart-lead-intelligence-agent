@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
 from app.services.generic_outreach_drafts import (
@@ -26,6 +26,7 @@ class NextFollowupChannelResult:
     reason: str
     sequence_step: int | None = None
     draft: dict[str, Any] | None = None
+    message: str | None = None
 
 
 @dataclass(frozen=True)
@@ -86,6 +87,8 @@ def mark_draft_manually_sent(
     draft_id: str,
     actor_id: str,
     notes: str | None = None,
+    reply_wait_days: int | None = None,
+    next_followup_decision_at: datetime | str | None = None,
 ) -> dict[str, Any]:
     draft = _draft_by_id(client, draft_id)
     if not draft:
@@ -94,6 +97,13 @@ def mark_draft_manually_sent(
         raise ValueError("Rejected or archived drafts cannot be marked as manually sent")
 
     review_note = notes.strip() if notes else "Marked as manually sent outside the system."
+    manual_sent_at = _parse_time(draft.get("manual_sent_at")) or _now()
+    wait_payload = _reply_wait_payload(
+        base_time=manual_sent_at,
+        reply_wait_days=reply_wait_days,
+        next_followup_decision_at=next_followup_decision_at,
+        required=True,
+    )
     rows = (
         client.table("outreach_drafts")
         .update(
@@ -102,6 +112,8 @@ def mark_draft_manually_sent(
                 "reviewed_by": actor_id,
                 "reviewed_at": _now_sql(),
                 "review_notes": review_note,
+                "manual_sent_at": _format_time(manual_sent_at),
+                **wait_payload,
             }
         )
         .eq("id", draft_id)
@@ -126,6 +138,82 @@ def mark_draft_manually_sent(
             "note": "Draft was manually sent outside the system and remains recorded for review history.",
         },
     )
+    return rows[0]
+
+
+def update_draft_reply_wait(
+    client: Any,
+    *,
+    draft_id: str,
+    actor_id: str,
+    reply_wait_days: int | None = None,
+    next_followup_decision_at: datetime | str | None = None,
+) -> dict[str, Any]:
+    draft = _draft_by_id(client, draft_id)
+    if not draft:
+        raise ValueError("Outreach draft not found")
+    if not _is_sent_like(draft, set()):
+        raise ValueError("Reply wait can only be set after a draft is sent or manually sent")
+    if draft.get("followup_stopped_at"):
+        raise ValueError("Follow-up is already stopped for this draft")
+
+    sent_time = _sent_time(draft) or _now()
+    now = _now()
+    base_time = sent_time if sent_time > now else now
+    payload = _reply_wait_payload(
+        base_time=base_time,
+        reply_wait_days=reply_wait_days,
+        next_followup_decision_at=next_followup_decision_at,
+        required=True,
+    )
+    rows = (
+        client.table("outreach_drafts")
+        .update(
+            {
+                **payload,
+                "reviewed_by": actor_id,
+                "reviewed_at": _now_sql(),
+            }
+        )
+        .eq("id", draft_id)
+        .execute()
+        .data
+        or []
+    )
+    if not rows:
+        raise ValueError("Outreach draft not found")
+    return rows[0]
+
+
+def stop_draft_followup(
+    client: Any,
+    *,
+    draft_id: str,
+    actor_id: str,
+    reason: str = "Stopped by team decision.",
+) -> dict[str, Any]:
+    draft = _draft_by_id(client, draft_id)
+    if not draft:
+        raise ValueError("Outreach draft not found")
+    if not _is_sent_like(draft, set()):
+        raise ValueError("Follow-up can only be stopped after a draft is sent or manually sent")
+    rows = (
+        client.table("outreach_drafts")
+        .update(
+            {
+                "followup_stopped_at": _now_sql(),
+                "followup_stop_reason": reason.strip() or "Stopped by team decision.",
+                "reviewed_by": actor_id,
+                "reviewed_at": _now_sql(),
+            }
+        )
+        .eq("id", draft_id)
+        .execute()
+        .data
+        or []
+    )
+    if not rows:
+        raise ValueError("Outreach draft not found")
     return rows[0]
 
 
@@ -263,7 +351,12 @@ def _next_for_channel(
     actor_id: str | None,
 ) -> NextFollowupChannelResult:
     if lead_replied:
-        return NextFollowupChannelResult(channel=channel, created=False, reason="lead_replied")
+        return NextFollowupChannelResult(
+            channel=channel,
+            created=False,
+            reason="lead_replied",
+            message="Lead replied — follow-up stopped",
+        )
 
     sent_steps = [
         _step(draft)
@@ -278,8 +371,25 @@ def _next_for_channel(
             created=False,
             reason="previous_step_not_sent_or_approved",
         )
+    latest_sent_draft = _draft_for_channel_step(drafts, channel, latest_sent_step)
+    if not latest_sent_draft:
+        return NextFollowupChannelResult(
+            channel=channel,
+            created=False,
+            reason="previous_step_not_sent_or_approved",
+        )
     if latest_sent_step >= 4:
         return NextFollowupChannelResult(channel=channel, created=False, reason="sequence_complete")
+    wait_decision = _followup_wait_decision(latest_sent_draft)
+    if wait_decision:
+        return NextFollowupChannelResult(
+            channel=channel,
+            created=False,
+            reason=wait_decision,
+            sequence_step=latest_sent_step + 1,
+            draft=latest_sent_draft,
+            message=_followup_wait_message(latest_sent_draft, wait_decision),
+        )
 
     next_step = latest_sent_step + 1
     existing = _draft_for_channel_step(drafts, channel, next_step)
@@ -369,7 +479,11 @@ def _leads_for_source(client: Any, source: str) -> list[dict[str, Any]]:
 def _drafts_for_lead(client: Any, lead_id: str) -> list[dict[str, Any]]:
     rows = (
         client.table("outreach_drafts")
-        .select("id,lead_id,channel,subject,body,status,sequence_step,evidence_ids,review_notes")
+        .select(
+            "id,lead_id,channel,subject,body,status,sequence_step,evidence_ids,review_notes,"
+            "sent_at,manual_sent_at,reply_wait_days,next_followup_decision_at,"
+            "followup_stopped_at,followup_stop_reason"
+        )
         .eq("lead_id", lead_id)
         .execute()
         .data
@@ -381,7 +495,11 @@ def _drafts_for_lead(client: Any, lead_id: str) -> list[dict[str, Any]]:
 def _draft_by_id(client: Any, draft_id: str) -> dict[str, Any] | None:
     rows = (
         client.table("outreach_drafts")
-        .select("id,lead_id,channel,subject,body,status,sequence_step,evidence_ids,review_notes")
+        .select(
+            "id,lead_id,channel,subject,body,status,sequence_step,evidence_ids,review_notes,"
+            "sent_at,manual_sent_at,reply_wait_days,next_followup_decision_at,"
+            "followup_stopped_at,followup_stop_reason"
+        )
         .eq("id", draft_id)
         .limit(1)
         .execute()
@@ -434,6 +552,82 @@ def _is_sent_like(draft: dict[str, Any], sent_attempt_draft_ids: set[str]) -> bo
         str(draft.get("status") or "").casefold() in SENT_LIKE_STATUSES
         or str(draft.get("id") or "") in sent_attempt_draft_ids
     )
+
+
+def _followup_wait_decision(draft: dict[str, Any]) -> str | None:
+    if draft.get("followup_stopped_at"):
+        return "followup_stopped"
+    decision_at = _parse_time(draft.get("next_followup_decision_at"))
+    if decision_at is None:
+        return "reply_wait_not_set"
+    if decision_at > _now():
+        return "waiting_for_reply"
+    return None
+
+
+def _followup_wait_message(draft: dict[str, Any], reason: str) -> str:
+    if reason == "followup_stopped":
+        return "Follow-up stopped"
+    if reason == "reply_wait_not_set":
+        return "Reply wait period not set"
+    decision_at = _parse_time(draft.get("next_followup_decision_at"))
+    if decision_at is None:
+        return "Reply wait period not set"
+    return f"Waiting for reply until {_format_time(decision_at)}"
+
+
+def _reply_wait_payload(
+    *,
+    base_time: datetime,
+    reply_wait_days: int | None,
+    next_followup_decision_at: datetime | str | None,
+    required: bool,
+) -> dict[str, Any]:
+    if reply_wait_days is not None and next_followup_decision_at is not None:
+        raise ValueError("Choose reply_wait_days or next_followup_decision_at, not both")
+    if reply_wait_days is None and next_followup_decision_at is None:
+        if required:
+            raise ValueError("Reply wait period is required")
+        return {}
+    if reply_wait_days is not None:
+        decision_at = base_time + timedelta(days=reply_wait_days)
+        return {
+            "reply_wait_days": reply_wait_days,
+            "next_followup_decision_at": _format_time(decision_at),
+        }
+
+    decision_at = _parse_time(next_followup_decision_at)
+    if decision_at is None:
+        raise ValueError("next_followup_decision_at must be a valid ISO timestamp")
+    if decision_at <= base_time:
+        raise ValueError("next_followup_decision_at must be after the sent timestamp")
+    return {
+        "reply_wait_days": None,
+        "next_followup_decision_at": _format_time(decision_at),
+    }
+
+
+def _sent_time(draft: dict[str, Any]) -> datetime | None:
+    return _parse_time(draft.get("manual_sent_at")) or _parse_time(draft.get("sent_at"))
+
+
+def _parse_time(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str) and value.strip():
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    else:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _format_time(value: datetime) -> str:
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _draft_for_channel_step(
@@ -556,4 +750,8 @@ def _insert_audit_event(
 
 
 def _now_sql() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return _format_time(_now())
+
+
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
