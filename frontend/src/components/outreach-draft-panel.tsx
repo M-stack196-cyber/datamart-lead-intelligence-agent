@@ -27,6 +27,14 @@ export type OutreachDraft = {
 };
 
 type EvidenceLink = { id: string; title: string; source_url: string };
+type SenderAccount = {
+  id: string;
+  display_name: string;
+  email_address: string;
+  provider: "gmail_oauth" | "smtp" | "manual_only";
+  status: "not_connected" | "connected" | "disabled" | "error";
+  is_active: boolean;
+};
 type Props = {
   leadId: string;
   role: "admin" | "manager" | "sales" | null;
@@ -73,6 +81,9 @@ export function OutreachDraftPanel({ leadId, role, drafts, evidence, recipient, 
   const [edits, setEdits] = useState<Record<string, { subject: string; body: string }>>({});
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [replyWaits, setReplyWaits] = useState<Record<string, ReplyWaitState>>({});
+  const [senderAccounts, setSenderAccounts] = useState<SenderAccount[]>([]);
+  const [selectedSenders, setSelectedSenders] = useState<Record<string, string>>({});
+  const [manualSenderEmails, setManualSenderEmails] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -93,6 +104,20 @@ export function OutreachDraftPanel({ leadId, role, drafts, evidence, recipient, 
       });
     return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    if (!supabase) return;
+    let active = true;
+    authenticatedFetch(supabase, "/sender-accounts?active_only=true")
+      .then((response) => response.json())
+      .then((payload) => {
+        if (active) setSenderAccounts((payload.sender_accounts ?? []) as SenderAccount[]);
+      })
+      .catch(() => {
+        if (active) setSenderAccounts([]);
+      });
+    return () => { active = false; };
+  }, [supabase]);
 
   async function callBackend(path: string, body: object, method = "POST") {
     if (!supabase) throw new Error("Supabase is not configured");
@@ -164,8 +189,12 @@ export function OutreachDraftPanel({ leadId, role, drafts, evidence, recipient, 
     setError("");
     try {
       const waitPayload = manualSendReplyWaitPayload(replyWaits[draft.id]);
+      const senderAccountId = selectedSenders[draft.id] || null;
+      const sentFromEmail = manualSenderEmails[draft.id]?.trim() || null;
       await callBackend("/outreach-drafts/" + draft.id + "/manual-send", {
         review_notes: notes[draft.id]?.trim() || "Marked as manually sent outside the system.",
+        sender_account_id: senderAccountId,
+        sent_from_email: senderAccountId ? null : sentFromEmail,
         ...waitPayload,
       }, "PATCH");
       setMessage("Draft marked as manually sent. No provider send was triggered.");
@@ -185,10 +214,21 @@ export function OutreachDraftPanel({ leadId, role, drafts, evidence, recipient, 
 
   async function sendEmail(draft: OutreachDraft) {
     if (draft.status !== "approved" || draft.channel !== "email") return;
+    const senderAccountId = selectedSenders[draft.id];
+    if (!senderAccountId) {
+      setError("Choose a sender account before system sending.");
+      return;
+    }
     setBusy(draft.id);
     setError("");
     try {
-      const result = await callBackend("/outreach/drafts/" + draft.id + "/send-email", { confirm: true });
+      const waitPayload = manualSendReplyWaitPayload(replyWaits[draft.id]);
+      const sendConfirmation = { confirm: true };
+      const result = await callBackend("/outreach/drafts/" + draft.id + "/send-email", {
+        ...sendConfirmation,
+        sender_account_id: senderAccountId,
+        ...waitPayload,
+      });
       setMessage("Email sent with Gmail. Provider message ID: " + result.provider_message_id);
       setConfirmingDraft("");
       await onChanged();
@@ -197,6 +237,18 @@ export function OutreachDraftPanel({ leadId, role, drafts, evidence, recipient, 
     } finally {
       setBusy("");
     }
+  }
+
+  function selectedSender(draftId: string) {
+    return senderAccounts.find((account) => account.id === selectedSenders[draftId]);
+  }
+
+  function systemSendBlockedReason(draft: OutreachDraft) {
+    if (senderAccounts.length === 0) return "No sender account added yet. Admin must add a sender account before system sending.";
+    const sender = selectedSender(draft.id);
+    if (!sender) return "Choose a sender account before system sending.";
+    if (sender.status !== "connected" || sender.provider !== "gmail_oauth") return "This sender is not connected for system sending.";
+    return "";
   }
 
   return (
@@ -213,7 +265,8 @@ export function OutreachDraftPanel({ leadId, role, drafts, evidence, recipient, 
         ) : sortedDrafts(drafts).map((draft) => {
           const edit = edits[draft.id] || { subject: draft.subject || "", body: draft.body };
           const usedEvidence = evidence.filter((item) => draft.evidence_ids.includes(item.id));
-          const emailEnabled = draft.status === "approved" && draft.channel === "email" && gmailConfigured === true && salesApproved && Boolean(recipient);
+          const sendBlockedReason = draft.channel === "email" ? systemSendBlockedReason(draft) : "";
+          const emailEnabled = draft.status === "approved" && draft.channel === "email" && gmailConfigured === true && salesApproved && Boolean(recipient) && !sendBlockedReason;
           const sentTime = formatDateTime(draftSentTime(draft));
           const decisionTime = formatDateTime(draft.next_followup_decision_at);
           const wait = replyWaits[draft.id] ?? { preset: "", customDateTime: "" };
@@ -251,6 +304,40 @@ export function OutreachDraftPanel({ leadId, role, drafts, evidence, recipient, 
                 ))}
               </div>
               {draft.review_notes && <p className="mt-3 rounded-lg bg-slate-50 p-3 text-xs text-slate-600">Review notes: {draft.review_notes}</p>}
+              {draft.channel === "email" && (
+                <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
+                  <label className="text-xs font-bold uppercase text-slate-500">
+                    Sender account
+                    <select
+                      value={selectedSenders[draft.id] || ""}
+                      onChange={(event) => setSelectedSenders((current) => ({ ...current, [draft.id]: event.target.value }))}
+                      className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-900"
+                    >
+                      <option value="">Choose sender</option>
+                      {senderAccounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.display_name} ({account.email_address}) - {account.status}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {senderAccounts.length === 0 && (
+                    <p className="mt-2 text-xs font-semibold text-amber-800">No sender account added yet. Admin must add a sender account before system sending.</p>
+                  )}
+                  {selectedSenders[draft.id] && sendBlockedReason && (
+                    <p className="mt-2 text-xs font-semibold text-amber-800">{sendBlockedReason}</p>
+                  )}
+                  <label className="mt-3 block text-xs font-bold uppercase text-slate-500">
+                    Manual sent-from email
+                    <input
+                      value={manualSenderEmails[draft.id] || ""}
+                      onChange={(event) => setManualSenderEmails((current) => ({ ...current, [draft.id]: event.target.value }))}
+                      placeholder="name@datamart.com"
+                      className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-normal text-slate-900"
+                    />
+                  </label>
+                </div>
+              )}
               {canReview && draft.status === "draft" && (
                 <>
                   <input

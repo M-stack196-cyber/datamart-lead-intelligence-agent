@@ -80,7 +80,7 @@ async def test_email_endpoint_requires_literal_confirmation_and_never_sends_impl
             "sales",
             "POST",
             "/outreach/drafts/draft-1/send-email",
-            {"confirm": True},
+            {"confirm": True, "sender_account_id": "sender-1", "reply_wait_days": 4},
         )
 
     assert rejected.status_code == 422

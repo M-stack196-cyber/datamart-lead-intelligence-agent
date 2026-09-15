@@ -9,6 +9,7 @@ from app.services.generic_outreach_drafts import (
     _followup_draft_for_channel,
     _latest_score,
 )
+from app.services.sender_accounts import sender_for_manual_record
 
 
 ChannelRequest = Literal["email", "linkedin", "both"]
@@ -89,6 +90,8 @@ def mark_draft_manually_sent(
     notes: str | None = None,
     reply_wait_days: int | None = None,
     next_followup_decision_at: datetime | str | None = None,
+    sender_account_id: str | None = None,
+    sent_from_email: str | None = None,
 ) -> dict[str, Any]:
     draft = _draft_by_id(client, draft_id)
     if not draft:
@@ -104,6 +107,11 @@ def mark_draft_manually_sent(
         next_followup_decision_at=next_followup_decision_at,
         required=True,
     )
+    stored_sender_account_id, stored_sent_from_email = sender_for_manual_record(
+        client,
+        sender_account_id=sender_account_id,
+        sent_from_email=sent_from_email,
+    )
     rows = (
         client.table("outreach_drafts")
         .update(
@@ -113,6 +121,8 @@ def mark_draft_manually_sent(
                 "reviewed_at": _now_sql(),
                 "review_notes": review_note,
                 "manual_sent_at": _format_time(manual_sent_at),
+                "sender_account_id": stored_sender_account_id,
+                "sent_from_email": stored_sent_from_email,
                 **wait_payload,
             }
         )
@@ -134,6 +144,8 @@ def mark_draft_manually_sent(
             "lead_id": draft.get("lead_id"),
             "channel": draft.get("channel"),
             "sequence_step": draft.get("sequence_step"),
+            "sender_account_id": stored_sender_account_id,
+            "sent_from_email": stored_sent_from_email,
             "status_used": "manual_sent",
             "note": "Draft was manually sent outside the system and remains recorded for review history.",
         },
@@ -482,7 +494,7 @@ def _drafts_for_lead(client: Any, lead_id: str) -> list[dict[str, Any]]:
         .select(
             "id,lead_id,channel,subject,body,status,sequence_step,evidence_ids,review_notes,"
             "sent_at,manual_sent_at,reply_wait_days,next_followup_decision_at,"
-            "followup_stopped_at,followup_stop_reason"
+            "followup_stopped_at,followup_stop_reason,sender_account_id,sent_from_email"
         )
         .eq("lead_id", lead_id)
         .execute()
@@ -498,7 +510,7 @@ def _draft_by_id(client: Any, draft_id: str) -> dict[str, Any] | None:
         .select(
             "id,lead_id,channel,subject,body,status,sequence_step,evidence_ids,review_notes,"
             "sent_at,manual_sent_at,reply_wait_days,next_followup_decision_at,"
-            "followup_stopped_at,followup_stop_reason"
+            "followup_stopped_at,followup_stop_reason,sender_account_id,sent_from_email"
         )
         .eq("id", draft_id)
         .limit(1)

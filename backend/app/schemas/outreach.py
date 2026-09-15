@@ -23,11 +23,29 @@ class ManualSendRequest(BaseModel):
     review_notes: str | None = Field(default=None, max_length=2000)
     reply_wait_days: int | None = Field(default=None, ge=1, le=365)
     next_followup_decision_at: datetime | None = None
+    sender_account_id: str | None = None
+    sent_from_email: str | None = Field(default=None, max_length=320)
 
 
 class ReplyWaitRequest(BaseModel):
     reply_wait_days: int | None = Field(default=None, ge=1, le=365)
     next_followup_decision_at: datetime | None = None
+
+
+class SenderAccountCreateRequest(BaseModel):
+    display_name: str = Field(min_length=1, max_length=120)
+    email_address: str = Field(min_length=3, max_length=320)
+    provider: Literal["manual_only", "gmail_oauth", "smtp"] = "manual_only"
+    daily_send_limit: int | None = Field(default=None, ge=1, le=10000)
+
+
+class SenderAccountUpdateRequest(BaseModel):
+    display_name: str | None = Field(default=None, min_length=1, max_length=120)
+    email_address: str | None = Field(default=None, min_length=3, max_length=320)
+    provider: Literal["manual_only", "gmail_oauth", "smtp"] | None = None
+    daily_send_limit: int | None = Field(default=None, ge=1, le=10000)
+    status: Literal["not_connected", "connected", "disabled", "error"] | None = None
+    is_active: bool | None = None
 
 
 class NextFollowupDraftRequest(BaseModel):
@@ -42,6 +60,9 @@ class PrimaryDraftRequest(BaseModel):
 
 class SendEmailRequest(BaseModel):
     confirm: Literal[True]
+    sender_account_id: str
+    reply_wait_days: int | None = Field(default=None, ge=1, le=365)
+    next_followup_decision_at: datetime | None = None
 
 
 class SaveOutreachDraftRequest(BaseModel):

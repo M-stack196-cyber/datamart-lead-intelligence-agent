@@ -25,13 +25,74 @@ class FakeRpcClient:
     def __init__(self) -> None:
         self.calls = []
         self.current = ""
+        self.rows = {
+            "sender_accounts": [
+                {
+                    "id": "sender-1",
+                    "display_name": "Datamart Sales",
+                    "email_address": "sales@datamart.com",
+                    "provider": "gmail_oauth",
+                    "status": "connected",
+                    "is_active": True,
+                    "daily_send_limit": 50,
+                    "sent_today": 0,
+                    "last_sent_at": None,
+                    "reply_tracking_enabled": False,
+                    "created_by": "admin-1",
+                    "created_at": "2026-09-15T00:00:00Z",
+                    "updated_at": "2026-09-15T00:00:00Z",
+                }
+            ],
+            "outreach_drafts": [{"id": "draft-1", "sent_at": None}],
+            "email_delivery_attempts": [],
+        }
+
+    def table(self, name):
+        self.table_name = name
+        self.operation = "select"
+        self.payload = None
+        self.filters = []
+        return self
+
+    def select(self, value):
+        self.operation = "select"
+        return self
+
+    def update(self, payload):
+        self.operation = "update"
+        self.payload = payload
+        return self
+
+    def eq(self, key, value):
+        self.filters.append((key, value))
+        return self
+
+    def limit(self, value):
+        self.limit_value = value
+        return self
+
+    def order(self, *args, **kwargs):
+        return self
 
     def rpc(self, name, payload):
         self.current = name
         self.calls.append((name, payload))
+        if hasattr(self, "operation"):
+            del self.operation
         return self
 
     def execute(self):
+        if hasattr(self, "operation"):
+            rows = self.rows.get(self.table_name, [])
+            filtered = rows
+            for key, value in self.filters:
+                filtered = [row for row in filtered if row.get(key) == value]
+            if self.operation == "update":
+                for row in filtered:
+                    row.update(self.payload)
+                return type("Response", (), {"data": filtered})()
+            del self.operation
+            return type("Response", (), {"data": filtered[: getattr(self, "limit_value", len(filtered))]})()
         if self.current == "begin_email_delivery_attempt":
             data = {
                 "attempt_id": "attempt-1",
@@ -107,7 +168,12 @@ def test_send_records_success_and_failure_with_fake_transports() -> None:
     with patch("app.api.router._backend_client", return_value=successful_client), patch(
         "app.api.router.GmailClient", return_value=FakeTransport()
     ):
-        result = _send_approved_email(configured_settings(), "actor-1", "draft-1")
+        result = _send_approved_email(
+            configured_settings(),
+            "actor-1",
+            "draft-1",
+            type("Request", (), {"sender_account_id": "sender-1", "reply_wait_days": 4, "next_followup_decision_at": None})(),
+        )
 
     assert result["status"] == "sent"
     assert successful_client.calls[-1][1]["succeeded"] is True
@@ -117,7 +183,12 @@ def test_send_records_success_and_failure_with_fake_transports() -> None:
     with patch("app.api.router._backend_client", return_value=failed_client), patch(
         "app.api.router.GmailClient", return_value=FakeTransport(fail=True)
     ), pytest.raises(GmailDeliveryError, match="Gmail provider request failed"):
-        _send_approved_email(configured_settings(), "actor-1", "draft-1")
+        _send_approved_email(
+            configured_settings(),
+            "actor-1",
+            "draft-1",
+            type("Request", (), {"sender_account_id": "sender-1", "reply_wait_days": 4, "next_followup_decision_at": None})(),
+        )
 
     assert failed_client.calls[-1][1]["succeeded"] is False
     assert failed_client.calls[-1][1]["safe_error"] == "Gmail provider request failed"

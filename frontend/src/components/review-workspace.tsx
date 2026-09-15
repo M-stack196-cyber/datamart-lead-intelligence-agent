@@ -595,13 +595,13 @@ export function ReviewWorkspace() {
                       drafts={drafts}
                       evidence={[]}
                       recipient={lead.email}
-                      salesApproved={false}
+                      salesApproved
                       onChanged={async () => {
                         setMessage("Draft status updated.");
                         await load();
                       }}
                       allowGenerate={false}
-                      allowSendActions={false}
+                      allowSendActions
                       allowManualSend
                     />
                     {archivedDrafts.length > 0 && (

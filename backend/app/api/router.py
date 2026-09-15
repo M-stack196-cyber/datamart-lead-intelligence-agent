@@ -1,7 +1,7 @@
 from secrets import compare_digest
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from supabase import create_client
 
 from app.api.auth import CurrentUser, require_roles, require_user
@@ -26,6 +26,8 @@ from app.schemas.outreach import (
     RunDueFollowupsRequest,
     SaveOutreachDraftRequest,
     SendEmailRequest,
+    SenderAccountCreateRequest,
+    SenderAccountUpdateRequest,
 )
 from app.integrations.gmail import GmailClient, GmailDeliveryError
 from app.integrations.outbound import InboundReplyRequest
@@ -75,6 +77,14 @@ from app.services.next_followup_drafts import (
     update_draft_reply_wait,
 )
 from app.services.primary_outreach_drafts import create_primary_outreach_draft
+from app.services.sender_accounts import (
+    contains_secret_field,
+    create_sender_account,
+    list_sender_accounts,
+    set_sender_account_enabled,
+    update_sender_account,
+    validate_system_sender_account,
+)
 from app.services.lead_backup_export import build_lead_backup_csv, build_lead_backup_preview
 
 from app.services.vibe_discovery_cycle import approved_daily_limit, run_vibe_discovery_cycle
@@ -226,17 +236,38 @@ def _review_outreach_draft(
     )
 
 
-def _send_approved_email(settings: Settings, actor_id: str, draft_id: str) -> dict:
+def _send_approved_email(
+    settings: Settings,
+    actor_id: str,
+    draft_id: str,
+    request: SendEmailRequest | None = None,
+) -> dict:
     if not settings.integration_status()["gmail"]:
         raise RuntimeError("Gmail sending is disabled until all Gmail settings are configured")
     client = _backend_client(settings)
+    if request is None:
+        raise ValueError("sender_account_id is required")
+    sender_account = validate_system_sender_account(client, request.sender_account_id)
+    sender_email = str(sender_account["email_address"])
+    if settings.gmail_sender_email and sender_email != settings.gmail_sender_email.lower():
+        raise ValueError("Selected sender does not match the configured Gmail sender.")
+    if request.reply_wait_days is None and request.next_followup_decision_at is None:
+        raise ValueError("Reply wait period is required")
+    if request.reply_wait_days is not None and request.next_followup_decision_at is not None:
+        raise ValueError("Choose reply_wait_days or next_followup_decision_at, not both")
+    if request.next_followup_decision_at is not None:
+        decision_at = request.next_followup_decision_at
+        if decision_at.tzinfo is None:
+            decision_at = decision_at.replace(tzinfo=timezone.utc)
+        if decision_at <= datetime.now(timezone.utc):
+            raise ValueError("next_followup_decision_at must be in the future")
     attempt = (
         client.rpc(
             "begin_email_delivery_attempt",
             {
                 "target_draft_id": draft_id,
                 "actor_id": actor_id,
-                "sender_email": settings.gmail_sender_email,
+                "sender_email": sender_email,
             },
         )
         .execute()
@@ -286,6 +317,7 @@ def _send_approved_email(settings: Settings, actor_id: str, draft_id: str) -> di
         .execute()
         .data
     )
+    sent_at = _now_sql()
     try:
         draft_rows = (
             client.table("outreach_drafts")
@@ -300,20 +332,55 @@ def _send_approved_email(settings: Settings, actor_id: str, draft_id: str) -> di
         draft_rows = []
     existing_sent_at = draft_rows[0].get("sent_at") if draft_rows and isinstance(draft_rows[0], dict) else None
     try:
+        wait_payload = {}
+        try:
+            from app.services.next_followup_drafts import _parse_time, _reply_wait_payload
+
+            wait_payload = _reply_wait_payload(
+                base_time=_parse_time(existing_sent_at) or datetime.fromisoformat(sent_at.replace("Z", "+00:00")),
+                reply_wait_days=request.reply_wait_days,
+                next_followup_decision_at=request.next_followup_decision_at,
+                required=True,
+            )
+        except ValueError:
+            raise
         client.table("outreach_drafts").update(
             {
                 "status": "system_sent",
                 "reviewed_by": actor_id,
                 "reviewed_at": _now_sql(),
-                "sent_at": existing_sent_at or _now_sql(),
+                "sent_at": existing_sent_at or sent_at,
+                "sender_account_id": sender_account["id"],
+                "sent_from_email": sender_email,
+                **wait_payload,
             }
         ).eq("id", draft_id).execute()
+    except AttributeError:
+        pass
+    try:
+        client.table("email_delivery_attempts").update(
+            {
+                "sender_account_id": sender_account["id"],
+                "sent_from_email": sender_email,
+            }
+        ).eq("id", attempt["attempt_id"]).execute()
+    except AttributeError:
+        pass
+    try:
+        client.table("sender_accounts").update(
+            {
+                "sent_today": int(sender_account.get("sent_today") or 0) + 1,
+                "last_sent_at": sent_at,
+            }
+        ).eq("id", sender_account["id"]).execute()
     except AttributeError:
         pass
     return {
         "status": "sent",
         "attempt_id": attempt["attempt_id"],
         "provider_message_id": delivery.message_id,
+        "sender_account_id": sender_account["id"],
+        "sent_from_email": sender_email,
         "delivery": result,
     }
 
@@ -371,6 +438,8 @@ def _mark_manual_send(
         notes=request.review_notes,
         reply_wait_days=request.reply_wait_days,
         next_followup_decision_at=request.next_followup_decision_at,
+        sender_account_id=request.sender_account_id,
+        sent_from_email=request.sent_from_email,
     )
 
 
@@ -460,6 +529,64 @@ def _create_primary_outreach(
     }
 
 
+def _list_sender_accounts(settings: Settings, *, active_only: bool = False) -> dict:
+    return {"sender_accounts": list_sender_accounts(_backend_client(settings), active_only=active_only)}
+
+
+def _create_sender_account(
+    settings: Settings,
+    actor_id: str,
+    request: SenderAccountCreateRequest,
+    raw_payload: dict | None = None,
+) -> dict:
+    if raw_payload and contains_secret_field(raw_payload):
+        raise ValueError("Sender account requests must not include password, token, or secret fields")
+    account = create_sender_account(
+        _backend_client(settings),
+        actor_id=actor_id,
+        display_name=request.display_name,
+        email_address=request.email_address,
+        provider=request.provider,
+        daily_send_limit=request.daily_send_limit,
+    )
+    return {
+        "sender_account": account,
+        "message": "Connection flow not implemented yet" if account["provider"] in {"gmail_oauth", "smtp"} else None,
+    }
+
+
+def _update_sender_account(
+    settings: Settings,
+    account_id: str,
+    request: SenderAccountUpdateRequest,
+    raw_payload: dict | None = None,
+) -> dict:
+    if raw_payload and contains_secret_field(raw_payload):
+        raise ValueError("Sender account requests must not include password, token, or secret fields")
+    return {
+        "sender_account": update_sender_account(
+            _backend_client(settings),
+            account_id=account_id,
+            display_name=request.display_name,
+            email_address=request.email_address,
+            provider=request.provider,
+            daily_send_limit=request.daily_send_limit,
+            status=request.status,
+            is_active=request.is_active,
+        )
+    }
+
+
+def _set_sender_account_enabled(settings: Settings, account_id: str, *, enabled: bool) -> dict:
+    return {
+        "sender_account": set_sender_account_enabled(
+            _backend_client(settings),
+            account_id=account_id,
+            enabled=enabled,
+        )
+    }
+
+
 def _lead_backup_export(
     settings: Settings,
     *,
@@ -507,6 +634,89 @@ async def health_check() -> HealthResponse:
         ready=ready,
         integrations_configured=integrations,
     )
+
+
+@router.get("/sender-accounts", tags=["sender-accounts"])
+async def list_sender_accounts_route(
+    active_only: bool = Query(default=False),
+    _user: CurrentUser = Depends(require_roles("admin", "manager", "sales")),
+) -> dict:
+    """List non-secret sender account metadata for account selection."""
+    try:
+        return _list_sender_accounts(get_settings(), active_only=active_only)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Unable to list sender accounts") from exc
+
+
+@router.post("/sender-accounts", tags=["sender-accounts"])
+async def create_sender_account_route(
+    request: SenderAccountCreateRequest,
+    raw_request: Request,
+    user: CurrentUser = Depends(require_roles("admin", "manager")),
+) -> dict:
+    """Create a sender account shell without accepting or returning credentials."""
+    try:
+        raw_payload = await raw_request.json()
+        return _create_sender_account(get_settings(), user.id, request, raw_payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Unable to create sender account") from exc
+
+
+@router.patch("/sender-accounts/{account_id}", tags=["sender-accounts"])
+async def update_sender_account_route(
+    account_id: str,
+    request: SenderAccountUpdateRequest,
+    raw_request: Request,
+    _user: CurrentUser = Depends(require_roles("admin", "manager")),
+) -> dict:
+    """Update non-secret sender account metadata."""
+    try:
+        raw_payload = await raw_request.json()
+        return _update_sender_account(get_settings(), account_id, request, raw_payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Unable to update sender account") from exc
+
+
+@router.patch("/sender-accounts/{account_id}/disable", tags=["sender-accounts"])
+async def disable_sender_account_route(
+    account_id: str,
+    _user: CurrentUser = Depends(require_roles("admin", "manager")),
+) -> dict:
+    """Disable a sender account so it cannot be used for system sending."""
+    try:
+        return _set_sender_account_enabled(get_settings(), account_id, enabled=False)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Unable to disable sender account") from exc
+
+
+@router.patch("/sender-accounts/{account_id}/enable", tags=["sender-accounts"])
+async def enable_sender_account_route(
+    account_id: str,
+    _user: CurrentUser = Depends(require_roles("admin", "manager")),
+) -> dict:
+    """Enable a sender account without changing its connection status."""
+    try:
+        return _set_sender_account_enabled(get_settings(), account_id, enabled=True)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Unable to enable sender account") from exc
 
 
 @router.get("/icp/versions", response_model=list[IcpVersionSummary], tags=["icp"])
@@ -1382,12 +1592,12 @@ async def create_primary_outreach_draft_route(
 @router.post("/outreach/drafts/{draft_id}/send-email", tags=["outreach"])
 async def send_approved_email(
     draft_id: str,
-    _request: SendEmailRequest,
+    request: SendEmailRequest,
     user: CurrentUser = Depends(require_roles("admin", "manager", "sales")),
 ) -> dict:
     """Send only after the caller posts an explicit literal confirmation."""
     try:
-        return _send_approved_email(get_settings(), user.id, draft_id)
+        return _send_approved_email(get_settings(), user.id, draft_id, request)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except GmailDeliveryError as exc:
