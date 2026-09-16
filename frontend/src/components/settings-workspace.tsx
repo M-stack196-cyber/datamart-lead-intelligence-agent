@@ -156,6 +156,35 @@ export function SettingsWorkspace() {
     }
   }, [load, supabase]);
 
+  const connectGmail = useCallback(async (account: SenderAccount) => {
+    if (!supabase) return;
+    setError("");
+    setMessage("");
+    try {
+      const response = await authenticatedFetch(supabase, `/sender-accounts/${account.id}/gmail/connect`, { method: "POST" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.detail || "Unable to start Gmail connection");
+      window.location.href = payload.authorization_url;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to start Gmail connection");
+    }
+  }, [supabase]);
+
+  const disconnectGmail = useCallback(async (account: SenderAccount) => {
+    if (!supabase) return;
+    setError("");
+    setMessage("");
+    try {
+      const response = await authenticatedFetch(supabase, `/sender-accounts/${account.id}/gmail/disconnect`, { method: "PATCH" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.detail || "Unable to disconnect Gmail");
+      setMessage("Gmail disconnected.");
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to disconnect Gmail");
+    }
+  }, [load, supabase]);
+
   useEffect(() => {
     const task = window.setTimeout(() => {
       void load();
@@ -194,7 +223,7 @@ export function SettingsWorkspace() {
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h2 className="text-lg font-bold text-slate-950">Sender accounts</h2>
-            <p className="mt-1 text-sm text-slate-500">Gmail OAuth and SMTP connection flows are not implemented yet.</p>
+            <p className="mt-1 text-sm text-slate-500">Gmail OAuth is available for system sending. SMTP secret storage is not enabled yet.</p>
           </div>
         </div>
         <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_1fr_12rem_8rem_auto]">
@@ -222,6 +251,11 @@ export function SettingsWorkspace() {
             <option value="gmail_oauth">Gmail OAuth</option>
             <option value="smtp">SMTP</option>
           </select>
+          {senderForm.provider === "gmail_oauth" && (
+            <p className="rounded-xl bg-teal-50 px-3 py-2 text-xs font-semibold text-teal-900 lg:col-span-5">
+              You will connect securely with Google. No password is stored.
+            </p>
+          )}
           <input
             aria-label="Daily send limit"
             type="number"
@@ -251,18 +285,43 @@ export function SettingsWorkspace() {
               <p className="mt-2 text-xs text-slate-500">
                 {account.provider} | {account.sent_today}/{account.daily_send_limit ?? "unlimited"} sent today
               </p>
-              {account.provider !== "manual_only" && account.status !== "connected" && (
+              {account.provider === "gmail_oauth" && account.status !== "connected" && (
                 <p className="mt-2 rounded-lg bg-amber-50 p-2 text-xs font-semibold text-amber-900">
-                  Connection flow not implemented yet. This account can be recorded for manual sending only.
+                  Connect Gmail to enable system sending from this account.
                 </p>
               )}
-              <button
-                type="button"
-                onClick={() => void setSenderEnabled(account, !account.is_active)}
-                className="mt-3 rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold text-slate-800"
-              >
-                {account.is_active ? "Disable" : "Enable"}
-              </button>
+              {account.provider === "smtp" && (
+                <p className="mt-2 rounded-lg bg-amber-50 p-2 text-xs font-semibold text-amber-900">
+                  SMTP secret storage is not enabled yet. This account can be recorded for manual sending only.
+                </p>
+              )}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => void setSenderEnabled(account, !account.is_active)}
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold text-slate-800"
+                >
+                  {account.is_active ? "Disable" : "Enable"}
+                </button>
+                {account.provider === "gmail_oauth" && account.status !== "connected" && (
+                  <button
+                    type="button"
+                    onClick={() => void connectGmail(account)}
+                    className="rounded-lg bg-teal-600 px-3 py-2 text-xs font-bold text-white"
+                  >
+                    Connect Gmail
+                  </button>
+                )}
+                {account.provider === "gmail_oauth" && account.status === "connected" && (
+                  <button
+                    type="button"
+                    onClick={() => void disconnectGmail(account)}
+                    className="rounded-lg border border-red-200 px-3 py-2 text-xs font-bold text-red-800"
+                  >
+                    Disconnect Gmail
+                  </button>
+                )}
+              </div>
             </div>
           ))}
         </div>

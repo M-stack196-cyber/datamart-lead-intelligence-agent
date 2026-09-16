@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     gmail_client_secret: str | None = None
     gmail_refresh_token: str | None = None
     gmail_sender_email: str | None = None
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    gmail_oauth_redirect_uri: str | None = None
+    gmail_token_encryption_key: str | None = None
 
     supabase_url: str | None = None
     supabase_anon_key: str | None = None
@@ -95,10 +99,9 @@ class Settings(BaseSettings):
                 and self.outbound_reply_provider.casefold() != "mock"
             ),
             "gmail": bool(
-                self.gmail_client_id
-                and self.gmail_client_secret
-                and self.gmail_refresh_token
-                and self.gmail_sender_email
+                (self.google_client_id or self.gmail_client_id)
+                and (self.google_client_secret or self.gmail_client_secret)
+                and self.gmail_token_encryption_key
             ),
             "supabase": bool(
                 self.supabase_url

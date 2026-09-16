@@ -7,6 +7,7 @@ from app.api.router import _send_approved_email
 from app.core.config import Settings
 from app.integrations.gmail import GmailClient, GmailDelivery, GmailDeliveryError
 from app.services.email_delivery import EmailDeliveryService
+from app.services.gmail_oauth import encrypt_token
 
 
 class FakeTransport:
@@ -41,6 +42,14 @@ class FakeRpcClient:
                     "created_by": "admin-1",
                     "created_at": "2026-09-15T00:00:00Z",
                     "updated_at": "2026-09-15T00:00:00Z",
+                }
+            ],
+            "sender_account_oauth_tokens": [
+                {
+                    "id": "token-1",
+                    "sender_account_id": "sender-1",
+                    "provider": "gmail",
+                    "encrypted_refresh_token": encrypt_token(configured_settings(), "refresh-token"),
                 }
             ],
             "outreach_drafts": [{"id": "draft-1", "sent_at": None}],
@@ -115,6 +124,7 @@ def configured_settings() -> Settings:
         gmail_client_secret="client-secret",
         gmail_refresh_token="refresh-token",
         gmail_sender_email="sales@datamart.com",
+        gmail_token_encryption_key="unit-test-token-key",
     )
 
 

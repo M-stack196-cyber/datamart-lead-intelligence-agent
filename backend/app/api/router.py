@@ -2,6 +2,7 @@ from secrets import compare_digest
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
+from fastapi.responses import RedirectResponse
 from supabase import create_client
 
 from app.api.auth import CurrentUser, require_roles, require_user
@@ -77,9 +78,19 @@ from app.services.next_followup_drafts import (
     update_draft_reply_wait,
 )
 from app.services.primary_outreach_drafts import create_primary_outreach_draft
+from app.services.gmail_oauth import (
+    build_gmail_authorization_url,
+    delete_gmail_oauth_tokens,
+    exchange_gmail_code,
+    fetch_google_email,
+    load_gmail_refresh_token,
+    store_gmail_oauth_tokens,
+    verify_oauth_state,
+)
 from app.services.sender_accounts import (
     contains_secret_field,
     create_sender_account,
+    get_sender_account,
     list_sender_accounts,
     set_sender_account_enabled,
     update_sender_account,
@@ -249,8 +260,6 @@ def _send_approved_email(
         raise ValueError("sender_account_id is required")
     sender_account = validate_system_sender_account(client, request.sender_account_id)
     sender_email = str(sender_account["email_address"])
-    if settings.gmail_sender_email and sender_email != settings.gmail_sender_email.lower():
-        raise ValueError("Selected sender does not match the configured Gmail sender.")
     if request.reply_wait_days is None and request.next_followup_decision_at is None:
         raise ValueError("Reply wait period is required")
     if request.reply_wait_days is not None and request.next_followup_decision_at is not None:
@@ -261,6 +270,11 @@ def _send_approved_email(
             decision_at = decision_at.replace(tzinfo=timezone.utc)
         if decision_at <= datetime.now(timezone.utc):
             raise ValueError("next_followup_decision_at must be in the future")
+    refresh_token = load_gmail_refresh_token(
+        client,
+        settings=settings,
+        sender_account_id=request.sender_account_id,
+    )
     attempt = (
         client.rpc(
             "begin_email_delivery_attempt",
@@ -277,9 +291,9 @@ def _send_approved_email(
         raise RuntimeError("Email delivery attempt could not be created")
 
     transport = GmailClient(
-        settings.gmail_client_id or "",
-        settings.gmail_client_secret or "",
-        settings.gmail_refresh_token or "",
+        settings.google_client_id or settings.gmail_client_id or "",
+        settings.google_client_secret or settings.gmail_client_secret or "",
+        refresh_token,
     )
     try:
         delivery = EmailDeliveryService(transport).send(
@@ -551,7 +565,7 @@ def _create_sender_account(
     )
     return {
         "sender_account": account,
-        "message": "Connection flow not implemented yet" if account["provider"] in {"gmail_oauth", "smtp"} else None,
+        "message": "Connection flow not implemented yet" if account["provider"] == "smtp" else None,
     }
 
 
@@ -585,6 +599,62 @@ def _set_sender_account_enabled(settings: Settings, account_id: str, *, enabled:
             enabled=enabled,
         )
     }
+
+
+def _connect_gmail_sender(settings: Settings, account_id: str) -> dict:
+    account = get_sender_account(_backend_client(settings), account_id)
+    if account.get("provider") != "gmail_oauth":
+        raise ValueError("Sender account must use gmail_oauth provider")
+    return {
+        "authorization_url": build_gmail_authorization_url(
+            settings=settings,
+            sender_account_id=account_id,
+        )
+    }
+
+
+def _disconnect_gmail_sender(settings: Settings, account_id: str) -> dict:
+    client = _backend_client(settings)
+    account = get_sender_account(client, account_id)
+    if account.get("provider") != "gmail_oauth":
+        raise ValueError("Sender account must use gmail_oauth provider")
+    delete_gmail_oauth_tokens(client, sender_account_id=account_id)
+    return {
+        "sender_account": update_sender_account(
+            client,
+            account_id=account_id,
+            status="not_connected",
+        )
+    }
+
+
+def _handle_gmail_oauth_callback(settings: Settings, *, code: str, state: str) -> str:
+    client = _backend_client(settings)
+    account_id = verify_oauth_state(settings, state)
+    account = get_sender_account(client, account_id)
+    if account.get("provider") != "gmail_oauth":
+        raise ValueError("Sender account must use gmail_oauth provider")
+    tokens = exchange_gmail_code(settings, code=code)
+    google_email = fetch_google_email(str(tokens["access_token"]))
+    expected_email = str(account.get("email_address") or "").strip().lower()
+    if expected_email and expected_email != google_email:
+        raise ValueError("Connected Gmail account does not match sender account email")
+    store_gmail_oauth_tokens(
+        client,
+        settings=settings,
+        sender_account_id=account_id,
+        tokens=tokens,
+        google_email=google_email,
+    )
+    update_sender_account(
+        client,
+        account_id=account_id,
+        email_address=google_email,
+        provider="gmail_oauth",
+        status="connected",
+        is_active=True,
+    )
+    return google_email
 
 
 def _lead_backup_export(
@@ -717,6 +787,57 @@ async def enable_sender_account_route(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail="Unable to enable sender account") from exc
+
+
+@router.post("/sender-accounts/{account_id}/gmail/connect", tags=["sender-accounts"])
+async def connect_gmail_sender_route(
+    account_id: str,
+    _user: CurrentUser = Depends(require_roles("admin", "manager")),
+) -> dict:
+    """Start a server-side Gmail OAuth flow for a sender account."""
+    try:
+        return _connect_gmail_sender(get_settings(), account_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Unable to start Gmail connection") from exc
+
+
+@router.get("/gmail/oauth/callback", tags=["sender-accounts"])
+async def gmail_oauth_callback_route(
+    code: str | None = Query(default=None),
+    state: str | None = Query(default=None),
+    error: str | None = Query(default=None),
+) -> RedirectResponse:
+    """Complete Gmail OAuth without returning tokens to the browser."""
+    settings = get_settings()
+    if error:
+        return RedirectResponse(settings.frontend_url.rstrip("/") + "/settings?gmail=error")
+    if not code or not state:
+        return RedirectResponse(settings.frontend_url.rstrip("/") + "/settings?gmail=missing_code")
+    try:
+        _handle_gmail_oauth_callback(settings, code=code, state=state)
+        return RedirectResponse(settings.frontend_url.rstrip("/") + "/settings?gmail=connected")
+    except Exception:
+        return RedirectResponse(settings.frontend_url.rstrip("/") + "/settings?gmail=error")
+
+
+@router.patch("/sender-accounts/{account_id}/gmail/disconnect", tags=["sender-accounts"])
+async def disconnect_gmail_sender_route(
+    account_id: str,
+    _user: CurrentUser = Depends(require_roles("admin", "manager")),
+) -> dict:
+    """Remove stored Gmail OAuth tokens for a sender account."""
+    try:
+        return _disconnect_gmail_sender(get_settings(), account_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Unable to disconnect Gmail") from exc
 
 
 @router.get("/icp/versions", response_model=list[IcpVersionSummary], tags=["icp"])

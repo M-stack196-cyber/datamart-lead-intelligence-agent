@@ -10,6 +10,7 @@ from app.api.router import _send_approved_email
 from app.core.config import Settings
 from app.integrations.gmail import GmailDelivery
 from app.main import app
+from app.services.gmail_oauth import encrypt_token, sign_oauth_state
 from app.services.next_followup_drafts import mark_draft_manually_sent
 from app.services.sender_accounts import create_sender_account
 
@@ -37,6 +38,10 @@ class FakeQuery:
     def update(self, payload):
         self.operation = "update"
         self.payload = payload
+        return self
+
+    def delete(self):
+        self.operation = "delete"
         return self
 
     def eq(self, key, value):
@@ -68,6 +73,11 @@ class FakeQuery:
             self.client.updates.setdefault(self.table_name, []).append(self.payload)
             return SimpleNamespace(data=filtered)
 
+        if self.operation == "delete":
+            for row in list(filtered):
+                rows.remove(row)
+            return SimpleNamespace(data=filtered)
+
         return SimpleNamespace(data=filtered[: getattr(self, "limit_value", len(filtered))])
 
 
@@ -79,6 +89,7 @@ class FakeClient:
         self.current_rpc = ""
         self.rows = {
             "sender_accounts": [],
+            "sender_account_oauth_tokens": [],
             "outreach_drafts": [
                 {
                     "id": "draft-email-1",
@@ -140,6 +151,9 @@ def configured_settings() -> Settings:
         gmail_client_secret="client-secret",
         gmail_refresh_token="refresh-token",
         gmail_sender_email="sales@datamart.com",
+        gmail_token_encryption_key="unit-test-token-key",
+        gmail_oauth_redirect_uri="http://test/gmail/oauth/callback",
+        frontend_url="http://frontend.test",
     )
 
 
@@ -176,6 +190,24 @@ def add_sender(client, *, status="connected", provider="gmail_oauth", is_active=
     return row
 
 
+def add_token(client, sender_account_id="sender-1"):
+    row = {
+        "id": "token-1",
+        "sender_account_id": sender_account_id,
+        "provider": "gmail",
+        "encrypted_access_token": encrypt_token(configured_settings(), "access-token"),
+        "encrypted_refresh_token": encrypt_token(configured_settings(), "refresh-token"),
+        "token_type": "Bearer",
+        "scope": "https://www.googleapis.com/auth/gmail.send",
+        "expires_at": "2026-09-15T01:00:00Z",
+        "google_email": "sales@datamart.com",
+        "created_at": "2026-09-15T00:00:00Z",
+        "updated_at": "2026-09-15T00:00:00Z",
+    }
+    client.rows["sender_account_oauth_tokens"].append(row)
+    return row
+
+
 def test_admin_can_create_sender_account_without_secrets():
     client = FakeClient()
 
@@ -206,6 +238,17 @@ def test_sender_accounts_migration_guards_optional_email_delivery_attempts_table
     assert "create index if not exists email_delivery_attempts_sender_account_idx" in guarded_block
 
 
+def test_oauth_token_migration_keeps_tokens_service_role_only():
+    migration = (ROOT / "supabase" / "migrations" / "20260915150000_add_sender_account_oauth_tokens.sql").read_text()
+
+    assert "create table if not exists public.sender_account_oauth_tokens" in migration
+    assert "encrypted_access_token text" in migration
+    assert "encrypted_refresh_token text" in migration
+    assert "alter table public.sender_account_oauth_tokens enable row level security" in migration
+    assert "revoke all on table public.sender_account_oauth_tokens from anon, authenticated" in migration
+    assert "provider_config" not in migration
+
+
 def test_sender_account_email_uniqueness():
     client = FakeClient()
     add_sender(client)
@@ -218,6 +261,96 @@ def test_sender_account_email_uniqueness():
             email_address="sales@datamart.com",
             provider="manual_only",
         )
+
+
+@pytest.mark.anyio
+async def test_gmail_connect_url_rejects_sales_user():
+    response = await request_as("sales", "POST", "/sender-accounts/sender-1/gmail/connect")
+
+    assert response.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_gmail_connect_url_requires_gmail_oauth_provider():
+    fake = FakeClient()
+    add_sender(fake, provider="manual_only", status="not_connected")
+    with (
+        patch("app.api.router._backend_client", return_value=fake),
+        patch("app.api.router.get_settings", return_value=configured_settings()),
+    ):
+        response = await request_as("manager", "POST", "/sender-accounts/sender-1/gmail/connect")
+
+    assert response.status_code == 400
+    assert "gmail_oauth" in response.json()["detail"]
+
+
+@pytest.mark.anyio
+async def test_gmail_connect_url_returns_authorization_url_without_tokens():
+    fake = FakeClient()
+    add_sender(fake, provider="gmail_oauth", status="not_connected")
+    with (
+        patch("app.api.router._backend_client", return_value=fake),
+        patch("app.api.router.get_settings", return_value=configured_settings()),
+    ):
+        response = await request_as("admin", "POST", "/sender-accounts/sender-1/gmail/connect")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["authorization_url"].startswith("https://accounts.google.com/o/oauth2/v2/auth?")
+    assert "gmail.send" in body["authorization_url"]
+    assert "access_token" not in body
+    assert "refresh_token" not in body
+
+
+@pytest.mark.anyio
+async def test_gmail_oauth_callback_stores_encrypted_tokens_and_marks_connected():
+    fake = FakeClient()
+    add_sender(fake, provider="gmail_oauth", status="not_connected")
+    settings = configured_settings()
+    state = sign_oauth_state(settings, sender_account_id="sender-1")
+    with (
+        patch("app.api.router._backend_client", return_value=fake),
+        patch("app.api.router.get_settings", return_value=settings),
+        patch(
+            "app.api.router.exchange_gmail_code",
+            return_value={
+                "access_token": "access-token",
+                "refresh_token": "refresh-token",
+                "token_type": "Bearer",
+                "scope": "https://www.googleapis.com/auth/gmail.send",
+                "expires_in": 3600,
+            },
+        ),
+        patch("app.api.router.fetch_google_email", return_value="sales@datamart.com"),
+    ):
+        response = await request_as(
+            "sales",
+            "GET",
+            f"/gmail/oauth/callback?code=code-1&state={state}",
+        )
+
+    assert response.status_code in {302, 307}
+    token = fake.rows["sender_account_oauth_tokens"][0]
+    assert token["encrypted_refresh_token"] != "refresh-token"
+    assert token["encrypted_access_token"] != "access-token"
+    assert "provider_config" not in token
+    assert fake.rows["sender_accounts"][0]["status"] == "connected"
+
+
+@pytest.mark.anyio
+async def test_gmail_disconnect_removes_tokens_and_marks_not_connected():
+    fake = FakeClient()
+    add_sender(fake)
+    add_token(fake)
+    with (
+        patch("app.api.router._backend_client", return_value=fake),
+        patch("app.api.router.get_settings", return_value=configured_settings()),
+    ):
+        response = await request_as("admin", "PATCH", "/sender-accounts/sender-1/gmail/disconnect")
+
+    assert response.status_code == 200
+    assert fake.rows["sender_account_oauth_tokens"] == []
+    assert fake.rows["sender_accounts"][0]["status"] == "not_connected"
 
 
 @pytest.mark.anyio
@@ -250,7 +383,7 @@ async def test_sender_account_api_rejects_secret_fields_and_sanitizes_response()
     assert rejected.status_code == 400
     assert created.status_code == 200
     body = created.json()
-    assert body["message"] == "Connection flow not implemented yet"
+    assert body["message"] is None
     assert "provider_config" not in body["sender_account"]
 
 
@@ -318,9 +451,51 @@ def test_system_send_requires_sender_account_id():
     assert client.rpc_calls == []
 
 
+def test_system_send_requires_reply_wait_timing():
+    client = FakeClient()
+    add_sender(client)
+    add_token(client)
+
+    with patch("app.api.router._backend_client", return_value=client), pytest.raises(
+        ValueError, match="Reply wait period is required"
+    ):
+        _send_approved_email(
+            configured_settings(),
+            "actor-1",
+            "draft-email-1",
+            SimpleNamespace(confirm=True, sender_account_id="sender-1", reply_wait_days=None, next_followup_decision_at=None),
+        )
+
+    assert client.rpc_calls == []
+
+
+def test_system_send_rejects_both_reply_wait_and_custom_decision_time():
+    client = FakeClient()
+    add_sender(client)
+    add_token(client)
+
+    with patch("app.api.router._backend_client", return_value=client), pytest.raises(
+        ValueError, match="Choose reply_wait_days"
+    ):
+        _send_approved_email(
+            configured_settings(),
+            "actor-1",
+            "draft-email-1",
+            SimpleNamespace(
+                confirm=True,
+                sender_account_id="sender-1",
+                reply_wait_days=4,
+                next_followup_decision_at="2026-09-20T00:00:00Z",
+            ),
+        )
+
+    assert client.rpc_calls == []
+
+
 def test_system_send_stores_selected_sender_on_draft_and_attempt():
     client = FakeClient()
     add_sender(client)
+    add_token(client)
 
     with patch("app.api.router._backend_client", return_value=client), patch(
         "app.api.router.GmailClient", return_value=FakeTransport()
